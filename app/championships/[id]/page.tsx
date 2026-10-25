@@ -1,5 +1,3 @@
-
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -7,7 +5,10 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ year?: string }>;
+};
 
 type Championship = {
   id: string;
@@ -88,8 +89,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return { title: `${id.toUpperCase()} — Road to F1` };
 }
 
-export default async function ChampionshipPage({ params }: PageProps) {
+export default async function ChampionshipPage({ params, searchParams }: PageProps) {
   const { id } = await params;
+  const { year } = await searchParams;
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
@@ -112,14 +114,20 @@ export default async function ChampionshipPage({ params }: PageProps) {
   const championship = championshipData as unknown as Championship | null;
   if (!championship) notFound();
 
-  const { data: seasonData } = await supabase
+  // All ingested seasons for this championship, newest first.
+  const { data: seasonsData } = await supabase
     .from("seasons")
     .select("id, year, starts_on, ends_on")
     .eq("championship_id", id)
-    .order("year", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const season = seasonData as unknown as Season | null;
+    .order("year", { ascending: false });
+  const seasons = (seasonsData ?? []) as unknown as Season[];
+
+  // Selected season: ?year= param if it matches, else the latest season.
+  const wantedYear = year ? Number(year) : null;
+  const season =
+    (wantedYear !== null && !Number.isNaN(wantedYear)
+      ? seasons.find((s) => s.year === wantedYear)
+      : undefined) ?? seasons[0] ?? null;
 
   let standings: StandingRow[] = [];
   let entries: EntryRow[] = [];
@@ -201,6 +209,7 @@ export default async function ChampionshipPage({ params }: PageProps) {
   };
   const num = { textAlign: "right" as const };
   const link = { color: "#1d4ed8", textDecoration: "none" } as const;
+  const accent = championship.color ?? "#1d4ed8";
 
   return (
     <main style={{ maxWidth: 920, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui, sans-serif" }}>
@@ -220,6 +229,33 @@ export default async function ChampionshipPage({ params }: PageProps) {
         {championship.name}
         {season ? ` · ${fmtRange(season.starts_on, season.ends_on)}` : ""}
       </p>
+
+      {/* Season switcher */}
+      {seasons.length > 0 && (
+        <nav aria-label="Season" style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0.75rem 0 1.5rem" }}>
+          {seasons.map((s) => {
+            const active = season?.id === s.id;
+            return (
+              <Link
+                key={s.id}
+                href={`/championships/${id}?year=${s.year}`}
+                style={{
+                  padding: "4px 14px",
+                  borderRadius: 999,
+                  fontSize: 14,
+                  textDecoration: "none",
+                  border: `1px solid ${active ? accent : "#ccc"}`,
+                  color: active ? "#fff" : "#444",
+                  background: active ? accent : "transparent",
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                {s.year}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
 
       {!season && <p>No season ingested for this championship yet.</p>}
 
@@ -268,7 +304,7 @@ export default async function ChampionshipPage({ params }: PageProps) {
                     <strong>{r.points}</strong>
                   </td>
                   <td style={{ ...td, ...num }}>{r.wins}</td>
-                  <td style={{ ...td, ...num }}>{r.podiums}</td>
+                  <td style={...td, ...num}>{r.podiums}</td>
                   <td style={{ ...td, ...num }}>{r.fastest_laps}</td>
                 </tr>
               ))}
@@ -348,4 +384,3 @@ export default async function ChampionshipPage({ params }: PageProps) {
     </main>
   );
 }
-
