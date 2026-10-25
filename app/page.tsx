@@ -1,3 +1,6 @@
+
+
+import Link from "next/link";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -33,17 +36,24 @@ export default async function Home() {
   }
 
   return (
-    <main style={{ maxWidth: 640, margin: "4rem auto", padding: "0 1rem" }}>
+    <main style={{ maxWidth: 640, margin: "4rem auto", padding: "0 1rem", fontFamily: "system-ui, sans-serif" }}>
       <h1>Road to F1</h1>
       <p>
         {championships?.length
           ? "Database connected. Championships on the ladder:"
           : "Database connected, but empty — run the seed section of schema.sql."}
       </p>
-      <ul>
+      <ul style={{ lineHeight: 2 }}>
         {championships?.map((c) => (
           <li key={c.id}>
-            <strong style={{ color: c.color ?? undefined }}>{c.short_name}</strong>{" "}
+            <strong style={{ color: c.color ?? undefined }}>
+              <Link
+                href={`/championships/${c.id}`}
+                style={{ color: "inherit", textDecoration: "none" }}
+              >
+                {c.short_name}
+              </Link>
+            </strong>{" "}
             — {c.name} ({c.kind})
           </li>
         ))}
@@ -51,3 +61,4 @@ export default async function Home() {
     </main>
   );
 }
+
