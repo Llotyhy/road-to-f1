@@ -52,7 +52,7 @@ type WeekendRow = {
   sessions: Array<{ id: string; name: string; scheduled_on: string | null }>;
 };
 
-type WinnerRow = { session_id: string; driver: { full_name: string } | null };
+type WinnerRow = { session_id: string; driver: { full_name: string; slug: string } | null };
 
 const FLAGS: Record<string, string> = {
   AT: "🇦🇹", AU: "🇦🇺", BE: "🇧🇪", BR: "🇧🇷", CA: "🇨🇦", CH: "🇨🇭",
@@ -124,7 +124,7 @@ export default async function ChampionshipPage({ params }: PageProps) {
   let standings: StandingRow[] = [];
   let entries: EntryRow[] = [];
   let weekends: WeekendRow[] = [];
-  const winners = new Map<string, string>();
+  const winners = new Map<string, { name: string; slug: string | null }>();
 
   if (season) {
     const { data: standingsData } = await supabase
@@ -152,11 +152,13 @@ export default async function ChampionshipPage({ params }: PageProps) {
     if (sessionIds.length > 0) {
       const { data: winnersData } = await supabase
         .from("results")
-        .select("session_id, driver:drivers(full_name)")
+        .select("session_id, driver:drivers(full_name, slug)")
         .eq("finish_position", 1)
         .in("session_id", sessionIds);
       for (const w of (winnersData ?? []) as unknown as WinnerRow[]) {
-        if (w.driver?.full_name) winners.set(w.session_id, w.driver.full_name);
+        if (w.driver?.full_name) {
+          winners.set(w.session_id, { name: w.driver.full_name, slug: w.driver.slug ?? null });
+        }
       }
     }
   }
@@ -171,6 +173,7 @@ export default async function ChampionshipPage({ params }: PageProps) {
         points: Number(s.points ?? 0),
         entry,
         name: entry?.driver?.full_name ?? entry?.driver?.slug ?? s.driver_id,
+        slug: entry?.driver?.slug ?? null,
         team: entry?.team?.name ?? "",
         car: entry?.car_number ?? null,
         finalPosition: entry?.final_position ?? null,
@@ -197,6 +200,7 @@ export default async function ChampionshipPage({ params }: PageProps) {
     verticalAlign: "top" as const,
   };
   const num = { textAlign: "right" as const };
+  const link = { color: "#1d4ed8", textDecoration: "none" } as const;
 
   return (
     <main style={{ maxWidth: 920, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui, sans-serif" }}>
@@ -240,7 +244,15 @@ export default async function ChampionshipPage({ params }: PageProps) {
                 <tr key={r.driver_id}>
                   <td style={td}>{r.finalPosition ?? i + 1}</td>
                   <td style={td}>
-                    <strong>{r.name}</strong>
+                    <strong>
+                      {r.slug ? (
+                        <Link href={`/drivers/${r.slug}`} style={link}>
+                          {r.name}
+                        </Link>
+                      ) : (
+                        r.name
+                      )}
+                    </strong>
                     {r.entry?.rookie && (
                       <span
                         title="Rookie"
@@ -302,19 +314,30 @@ export default async function ChampionshipPage({ params }: PageProps) {
                         (a.scheduled_on ?? "").localeCompare(b.scheduled_on ?? "") ||
                         a.name.localeCompare(b.name)
                       )
-                      .map((s) => (
-                        <div key={s.id}>
-                          {s.name} —{" "}
-                          {winners.has(s.id) ? (
-                            <strong>{winners.get(s.id)}</strong>
-                          ) : (
-                            <span style={{ color: "#999" }}>no result yet</span>
-                          )}{" "}
-                          <span style={{ color: "#999", fontSize: 12 }}>
-                            ({fmtDay(s.scheduled_on)})
-                          </span>
-                        </div>
-                      ))}
+                      .map((s) => {
+                        const winner = winners.get(s.id);
+                        return (
+                          <div key={s.id}>
+                            {s.name} —{" "}
+                            {winner ? (
+                              <strong>
+                                {winner.slug ? (
+                                  <Link href={`/drivers/${winner.slug}`} style={link}>
+                                    {winner.name}
+                                  </Link>
+                                ) : (
+                                  winner.name
+                                )}
+                              </strong>
+                            ) : (
+                              <span style={{ color: "#999" }}>no result yet</span>
+                            )}{" "}
+                            <span style={{ color: "#999", fontSize: 12 }}>
+                              ({fmtDay(s.scheduled_on)})
+                            </span>
+                          </div>
+                        );
+                      })}
                   </td>
                 </tr>
               ))}
