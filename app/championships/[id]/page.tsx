@@ -304,7 +304,7 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
                     <strong>{r.points}</strong>
                   </td>
                   <td style={{ ...td, ...num }}>{r.wins}</td>
-                  <td style={...td, ...num}>{r.podiums}</td>
+                  <td style={{ ...td, ...num }}>{r.podiums}</td>
                   <td style={{ ...td, ...num }}>{r.fastest_laps}</td>
                 </tr>
               ))}
