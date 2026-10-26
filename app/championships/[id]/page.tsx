@@ -264,6 +264,11 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     sessions.forEach((s, i) => raceNo.set(s.id, i + 1));
   }
 
+  // A race session with zero result rows never ran — it was cancelled
+  // (weather, crash, ...). Races with results but no winner keep the
+  // "no result yet" fallback below.
+  const sessionsWithResults = new Set(results.map((r) => r.session_id));
+
   // Group the season's results per driver and per team stint, skipping
   // non-starts (a driver who DNS'd a race did not compete in it).
   type Stint = {
@@ -495,6 +500,12 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
                                   winner.name
                                 )}
                               </strong>
+                            ) : !sessionsWithResults.has(s.id) ? (
+                              <span
+                                style={{ color: "#999", fontStyle: "italic" }}
+                              >
+                                Race cancelled
+                              </span>
                             ) : (
                               <span style={{ color: "#999" }}>no result yet</span>
                             )}{" "}
