@@ -57,21 +57,26 @@ function Badge({ label, color, title }: { label: string; color: string; title: s
   );
 }
 
-/** One badge per season, most important first: FT -> PT -> R. */
-function seasonBadge(r: CareerRow): { label: string; color: string; title: string } | null {
-  let isFt = false;
-  let isPt = false;
+/** All applicable badges for one season, most important first: FT -> PT -> R. */
+function seasonBadges(r: CareerRow): { label: string; color: string; title: string }[] {
+  const badges: { label: string; color: string; title: string }[] = [];
   if (r.multiTeams) {
-    isFt = r.multiTeams.some((t) => t.ft);
-    isPt = !isFt;
+    if (r.multiTeams.some((t) => t.ft)) {
+      badges.push({ label: "FT", color: "#16a34a", title: FT_TITLE });
+    } else {
+      badges.push({ label: "PT", color: "#6b7280", title: PT_TITLE });
+    }
   } else if (r.ft !== null) {
-    isFt = r.ft;
-    isPt = !r.ft;
+    if (r.ft) {
+      badges.push({ label: "FT", color: "#16a34a", title: FT_TITLE });
+    } else {
+      badges.push({ label: "PT", color: "#6b7280", title: PT_TITLE });
+    }
   }
-  if (isFt) return { label: "FT", color: "#16a34a", title: FT_TITLE };
-  if (isPt) return { label: "PT", color: "#6b7280", title: PT_TITLE };
-  if (r.rookie) return { label: "R", color: "#f97316", title: ROOKIE_TITLE };
-  return null;
+  if (r.rookie) {
+    badges.push({ label: "R", color: "#f97316", title: ROOKIE_TITLE });
+  }
+  return badges;
 }
 
 export default function CareerTable({ rows }: { rows: CareerRow[] }) {
@@ -123,7 +128,7 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
       <tbody>
         {rows.map((r) => {
           const isOpen = !!expanded[r.key];
-          const badge = seasonBadge(r);
+          const badges = seasonBadges(r);
           return (
             <Fragment key={r.key}>
               <tr>
@@ -133,7 +138,9 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
                   <Link href={`/championships/${r.championshipId}?year=${r.year}`} style={link}>
                     {r.shortName}
                   </Link>
-                  {badge && <Badge label={badge.label} color={badge.color} title={badge.title} />}
+                  {badges.map((b) => (
+                    <Badge key={b.label} label={b.label} color={b.color} title={b.title} />
+                  ))}
                 </td>
                 <td style={{ ...td, whiteSpace: "nowrap" }}>
                   {r.multiTeams ? (
@@ -169,11 +176,6 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
                     <td style={td} />
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
                       {t.teamName} ({t.raceList})
-                      {t.ft ? (
-                        <Badge label="FT" color="#16a34a" title={FT_TITLE} />
-                      ) : (
-                        <Badge label="PT" color="#6b7280" title={PT_TITLE} />
-                      )}
                     </td>
                     <td style={{ ...td, ...num }}>—</td>
                     <td style={{ ...td, ...num }}>{t.races}</td>
