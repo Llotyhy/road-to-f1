@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import StandingsTable from "./standings-table";
+import type { StandingRow } from "./standings-table";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,7 @@ type Season = {
   ends_on: string | null;
 };
 
-type StandingRow = {
+type StandingsViewRow = {
   driver_id: string;
   points: number | string;
   wins: number;
@@ -36,7 +38,6 @@ type StandingRow = {
 
 type EntryRow = {
   driver_id: string;
-  car_number: number | null;
   rookie: boolean;
   final_position: number | null;
   driver: { id: string; full_name: string; slug: string } | null;
@@ -51,6 +52,21 @@ type WeekendRow = {
   date_from: string | null;
   date_to: string | null;
   sessions: Array<{ id: string; name: string; scheduled_on: string | null }>;
+};
+
+type ResultRow = {
+  session_id: string;
+  driver_id: string;
+  finish_position: number | null;
+  status: string;
+  points: number | string | null;
+  fastest_lap: boolean | null;
+  team: { id: string; name: string } | null;
+};
+
+type SLRow = {
+  driver_id: string;
+  sl_points: number | string;
 };
 
 type WinnerRow = { session_id: string; driver: { full_name: string; slug: string } | null };
@@ -105,6 +121,25 @@ function fmtRange(from: string | null, to: string | null): string {
   return `${f.getUTCDate()} ${month(f)} – ${t.getUTCDate()} ${month(t)} ${t.getUTCFullYear()}`;
 }
 
+/** Compact race list, e.g. [1, 2, 11, 12] -> "1-2, 11-12". */
+function formatRaceList(races: number[]): string {
+  const sorted = [...races].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i <= sorted.length; i++) {
+    const n = sorted[i];
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = n;
+    prev = n;
+  }
+  return parts.join(", ");
+}
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   return { title: `${championshipTitle(id)} - Road to F1` };
@@ -150,9 +185,11 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
       ? seasons.find((s) => s.year === wantedYear)
       : undefined) ?? seasons[0] ?? null;
 
-  let standings: StandingRow[] = [];
+  let standings: StandingsViewRow[] = [];
   let entries: EntryRow[] = [];
   let weekends: WeekendRow[] = [];
+  let results: ResultRow[] = [];
+  const slByDriver = new Map<string, number>();
   const winners = new Map<string, { name: string; slug: string | null }>();
 
   if (season) {
@@ -160,12 +197,12 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
       .from("v_championship_standings")
       .select("driver_id, points, wins, podiums, fastest_laps")
       .eq("season_id", season.id);
-    standings = (standingsData ?? []) as unknown as StandingRow[];
+    standings = (standingsData ?? []) as unknown as StandingsViewRow[];
 
     const { data: entriesData } = await supabase
       .from("season_entries")
       .select(
-        "driver_id, car_number, rookie, final_position, driver:drivers(id, full_name, slug), team:teams(id, name)"
+        "driver_id, rookie, final_position, driver:drivers(id, full_name, slug), team:teams(id, name)"
       )
       .eq("season_id", season.id);
     entries = (entriesData ?? []) as unknown as EntryRow[];
@@ -189,23 +226,127 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
           winners.set(w.session_id, { name: w.driver.full_name, slug: w.driver.slug ?? null });
         }
       }
+
+      // Per-race results for the season: race counts and per-team stints.
+      const { data: resultsData } = await supabase
+        .from("results")
+        .select(
+          "session_id, driver_id, finish_position, status, points, fastest_lap, team:teams(id, name)"
+        )
+        .in("session_id", sessionIds);
+      results = (resultsData ?? []) as unknown as ResultRow[];
+    }
+
+    // Super Licence points for this championship season.
+    const { data: slData } = await supabase
+      .from("v_superlicence_season")
+      .select("driver_id, sl_points")
+      .eq("championship_id", id)
+      .eq("year", season.year);
+    for (const s of (slData ?? []) as unknown as SLRow[]) {
+      slByDriver.set(s.driver_id, Number(s.sl_points ?? 0));
     }
   }
 
+  // Race number for every session of the season (calendar order: round, then
+  // date, then name) — the same numbering the driver profiles use, so race
+  // lists always match across the two pages.
+  const raceNo = new Map<string, number>();
+  {
+    const sessions = weekends
+      .flatMap((w) => w.sessions.map((s) => ({ ...s, round: w.round })))
+      .sort(
+        (a, b) =>
+          a.round - b.round ||
+          (a.scheduled_on ?? "").localeCompare(b.scheduled_on ?? "") ||
+          a.name.localeCompare(b.name)
+      );
+    sessions.forEach((s, i) => raceNo.set(s.id, i + 1));
+  }
+
+  // Group the season's results per driver and per team stint, skipping
+  // non-starts (a driver who DNS'd a race did not compete in it).
+  type Stint = {
+    teamName: string;
+    races: number[];
+    points: number;
+    wins: number;
+    podiums: number;
+    fastestLaps: number;
+  };
+  const stintsByDriver = new Map<string, Map<string, Stint>>();
+  for (const r of results) {
+    if (r.status === "dns") continue;
+    const no = raceNo.get(r.session_id);
+    if (no === undefined) continue;
+    let perDriver = stintsByDriver.get(r.driver_id);
+    if (!perDriver) {
+      perDriver = new Map();
+      stintsByDriver.set(r.driver_id, perDriver);
+    }
+    const teamId = r.team?.id ?? "";
+    let st = perDriver.get(teamId);
+    if (!st) {
+      st = {
+        teamName: r.team?.name ?? "—",
+        races: [],
+        points: 0,
+        wins: 0,
+        podiums: 0,
+        fastestLaps: 0,
+      };
+      perDriver.set(teamId, st);
+    }
+    st.races.push(no);
+    st.points += Number(r.points ?? 0);
+    if (r.finish_position === 1) st.wins += 1;
+    if (r.finish_position !== null && r.finish_position >= 1 && r.finish_position <= 3) {
+      st.podiums += 1;
+    }
+    if (r.fastest_lap) st.fastestLaps += 1;
+  }
+
   // Championship standings: eligible (entered) drivers only, live from results.
+  // Multi-team drivers get an expandable "N teams" link (career-table style);
+  // their main row always shows the season totals.
   const entryByDriver = new Map(entries.map((e) => [e.driver_id, e]));
   const tableRows = standings
     .map((s) => {
       const entry = entryByDriver.get(s.driver_id);
+      const stints = Array.from(stintsByDriver.get(s.driver_id)?.values() ?? []).sort(
+        (a, b) => (a.races[0] ?? 0) - (b.races[0] ?? 0)
+      );
+      for (const st of stints) st.races.sort((a, b) => a - b);
+      const totalRaces = stints.reduce((a, st) => a + st.races.length, 0);
+      const multi = stints.length > 1;
       return {
-        ...s,
+        key: s.driver_id,
         points: Number(s.points ?? 0),
-        entry,
+        wins: s.wins,
+        podiums: s.podiums,
+        fastestLaps: s.fastest_laps,
+        finalPosition: entry?.final_position ?? null,
         name: entry?.driver?.full_name ?? entry?.driver?.slug ?? s.driver_id,
         slug: entry?.driver?.slug ?? null,
-        team: entry?.team?.name ?? "",
-        car: entry?.car_number ?? null,
-        finalPosition: entry?.final_position ?? null,
+        rookie: entry?.rookie ?? false,
+        races: totalRaces,
+        slPoints: slByDriver.get(s.driver_id) ?? null,
+        teamName: multi
+          ? ""
+          : stints.length === 1
+            ? stints[0].teamName
+            : (entry?.team?.name ?? ""),
+        multiTeams: multi
+          ? stints.map((st) => ({
+              teamName: st.teamName,
+              raceList: formatRaceList(st.races),
+              races: st.races.length,
+              points: st.points,
+              wins: st.wins,
+              podiums: st.podiums,
+              fastestLaps: st.fastestLaps,
+            }))
+          : null,
       };
     })
     .sort(
@@ -215,6 +356,22 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
         b.podiums - a.podiums ||
         (a.finalPosition ?? 999) - (b.finalPosition ?? 999)
     );
+
+  const standingsRows: StandingRow[] = tableRows.map((r, i) => ({
+    key: r.key,
+    position: r.finalPosition ?? i + 1,
+    name: r.name,
+    slug: r.slug,
+    rookie: r.rookie,
+    teamName: r.teamName,
+    races: r.races,
+    points: r.points,
+    wins: r.wins,
+    podiums: r.podiums,
+    fastestLaps: r.fastestLaps,
+    slPoints: r.slPoints,
+    multiTeams: r.multiTeams,
+  }));
 
   const th = {
     textAlign: "left" as const,
@@ -228,7 +385,6 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     borderBottom: "1px solid #eee",
     verticalAlign: "top" as const,
   };
-  const num = { textAlign: "right" as const };
   const link = { color: "#1d4ed8", textDecoration: "none" } as const;
   const accent = championship.color ?? "#1d4ed8";
 
@@ -280,61 +436,14 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
 
       {!season && <p>No season ingested for this championship yet.</p>}
 
-      {season && tableRows.length > 0 && (
+      {season && standingsRows.length > 0 && (
         <section aria-label="Championship standings">
           <h2 style={{ fontSize: 20, marginBottom: 8 }}>Standings</h2>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={th}>Pos</th>
-                <th style={th}>Driver</th>
-                <th style={th}>Team</th>
-                <th style={{ ...th, ...num }}>Car</th>
-                <th style={{ ...th, ...num }}>Points</th>
-                <th style={{ ...th, ...num }}>Wins</th>
-                <th style={{ ...th, ...num }}>Podiums</th>
-                <th style={{ ...th, ...num }}>FLs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableRows.map((r, i) => (
-                <tr key={r.driver_id}>
-                  <td style={td}>{r.finalPosition ?? i + 1}</td>
-                  <td style={td}>
-                    <strong>
-                      {r.slug ? (
-                        <Link href={`/drivers/${r.slug}`} style={link}>
-                          {r.name}
-                        </Link>
-                      ) : (
-                        r.name
-                      )}
-                    </strong>
-                    {r.entry?.rookie && (
-                      <span
-                        title="Rookie"
-                        style={{ marginLeft: 6, fontSize: 11, color: "#f97316", border: "1px solid #f97316", borderRadius: 4, padding: "0 4px" }}
-                      >
-                        R
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ ...td, color: "#555" }}>{r.team}</td>
-                  <td style={{ ...td, ...num }}>{r.car ?? "—"}</td>
-                  <td style={{ ...td, ...num }}>
-                    <strong>{r.points}</strong>
-                  </td>
-                  <td style={{ ...td, ...num }}>{r.wins}</td>
-                  <td style={{ ...td, ...num }}>{r.podiums}</td>
-                  <td style={{ ...td, ...num }}>{r.fastest_laps}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <StandingsTable rows={standingsRows} />
         </section>
       )}
 
-      {season && tableRows.length === 0 && (
+      {season && standingsRows.length === 0 && (
         <p>
           No race results ingested for {season.year} yet — run a season data
           file in the Supabase SQL editor.
