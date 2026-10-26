@@ -80,15 +80,6 @@ function flagEmoji(code: string): string {
   );
 }
 
-/** Full country name from an ISO code, with a safe fallback. */
-function countryName(code: string): string {
-  try {
-    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
-  } catch {
-    return code;
-  }
-}
-
 /** Ordinal suffix for a day number: 1 -> "1st", 2 -> "2nd", 9 -> "9th", 21 -> "21st". */
 function ordinal(n: number): string {
   const suffixes = ["th", "st", "nd", "rd"];
@@ -462,12 +453,11 @@ export default async function DriverPage({ params }: PageProps) {
       </p>
 
       <header style={{ marginTop: 8 }}>
-        <style>{`.flag-box .flag-cap{opacity:0;transition:opacity .15s ease}.flag-box:hover .flag-cap{opacity:1}`}</style>
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
+            alignItems: "center",
             gap: 16,
           }}
         >
@@ -485,13 +475,8 @@ export default async function DriverPage({ params }: PageProps) {
             <h1 style={{ marginBottom: 2, textAlign: "left" }}>{driver.full_name}</h1>
           </div>
           {driver.nationality && (
-            <div className="flag-box" style={{ textAlign: "right", flexShrink: 0 }}>
-              <div style={{ fontSize: 40, lineHeight: 1.1 }}>
-                {flagEmoji(driver.nationality)}
-              </div>
-              <div className="flag-cap" style={{ fontSize: 13, color: "#888", marginTop: 2 }}>
-                {countryName(driver.nationality)}
-              </div>
+            <div style={{ fontSize: 40, lineHeight: 1.1, flexShrink: 0 }}>
+              {flagEmoji(driver.nationality)}
             </div>
           )}
         </div>
