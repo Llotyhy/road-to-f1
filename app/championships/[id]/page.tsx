@@ -66,7 +66,7 @@ const FLAGS: Record<string, string> = {
 const CHAMPIONSHIP_TITLES: Record<string, string> = {
   f2: "F2",
   f3: "F3",
-  freca: "FRECA",
+  freca: "FREC",
   "italian-f4": "Italian F4",
   indycar: "IndyCar",
   "formula-e": "Formula E",
