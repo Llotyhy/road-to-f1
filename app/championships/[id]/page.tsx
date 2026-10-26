@@ -62,6 +62,27 @@ const FLAGS: Record<string, string> = {
   ZA: "🇿🇦",
 };
 
+/** Browser-tab names for the championships (the URL id alone reads poorly). */
+const CHAMPIONSHIP_TITLES: Record<string, string> = {
+  f2: "F2",
+  f3: "F3",
+  freca: "FRECA",
+  "italian-f4": "Italian F4",
+  indycar: "IndyCar",
+  "formula-e": "Formula E",
+  "super-formula": "Super Formula",
+  "wec-hypercar": "WEC Hypercar",
+};
+
+function championshipTitle(id: string): string {
+  const known = CHAMPIONSHIP_TITLES[id];
+  if (known) return known;
+  return id
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function fmtDay(d: string | null): string {
   if (!d) return "";
   return new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", {
@@ -86,7 +107,7 @@ function fmtRange(from: string | null, to: string | null): string {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  return { title: `${id.toUpperCase()} — Road to F1` };
+  return { title: `${championshipTitle(id)} - Road to F1` };
 }
 
 export default async function ChampionshipPage({ params, searchParams }: PageProps) {
