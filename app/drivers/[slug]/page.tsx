@@ -89,14 +89,22 @@ function countryName(code: string): string {
   }
 }
 
+/** Ordinal suffix for a day number: 1 -> "1st", 2 -> "2nd", 9 -> "9th", 21 -> "21st". */
+function ordinal(n: number): string {
+  const suffixes = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${suffixes[(v - 20) % 10] ?? suffixes[v] ?? suffixes[0]}`;
+}
+
+/** Date of birth as "August 9th 2008". */
 function fmtDob(dob: string | null): string {
-  if (!dob) return "";
-  return new Date(dob + "T00:00:00Z").toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  if (!dob) return "—";
+  const d = new Date(dob + "T00:00:00Z");
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  return `${months[d.getUTCMonth()]} ${ordinal(d.getUTCDate())} ${d.getUTCFullYear()}`;
 }
 
 function calcAge(dob: string): number {
@@ -437,19 +445,6 @@ export default async function DriverPage({ params }: PageProps) {
     ).length,
   };
 
-  const natLine = driver.nationality
-    ? `${flagEmoji(driver.nationality)} ${countryName(driver.nationality)}`
-    : "";
-
-  let bornLine = "";
-  if (driver.date_of_birth && driver.place_of_birth) {
-    bornLine = `Born ${fmtDob(driver.date_of_birth)} (${calcAge(driver.date_of_birth)} years old) in ${driver.place_of_birth}`;
-  } else if (driver.date_of_birth) {
-    bornLine = `Born ${fmtDob(driver.date_of_birth)} (${calcAge(driver.date_of_birth)} years old)`;
-  } else if (driver.place_of_birth) {
-    bornLine = `Born in ${driver.place_of_birth}`;
-  }
-
   const statBox = {
     flex: "1 1 0",
     minWidth: 120,
@@ -466,33 +461,48 @@ export default async function DriverPage({ params }: PageProps) {
         </Link>
       </p>
 
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-          marginTop: 8,
-        }}
-      >
-        {driver.headshot_url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={driver.headshot_url}
-            alt=""
-            width={72}
-            height={72}
-            style={{ borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e5e5" }}
-          />
-        )}
-        <div>
-          <h1 style={{ marginBottom: 2 }}>{driver.full_name}</h1>
-          {natLine && (
-            <p style={{ margin: "2px 0", color: "#555", fontSize: 15 }}>{natLine}</p>
-          )}
-          {bornLine && (
-            <p style={{ margin: "2px 0", color: "#555", fontSize: 15 }}>{bornLine}</p>
+      <header style={{ marginTop: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {driver.headshot_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={driver.headshot_url}
+                alt=""
+                width={72}
+                height={72}
+                style={{ borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e5e5" }}
+              />
+            )}
+            <h1 style={{ marginBottom: 2, textAlign: "left" }}>{driver.full_name}</h1>
+          </div>
+          {driver.nationality && (
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontSize: 40, lineHeight: 1.1 }}>
+                {flagEmoji(driver.nationality)}
+              </div>
+              <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>
+                {countryName(driver.nationality)}
+              </div>
+            </div>
           )}
         </div>
+        <p style={{ margin: "4px 0 2px", color: "#555", fontSize: 15 }}>
+          Date of birth:{" "}
+          {driver.date_of_birth
+            ? `${fmtDob(driver.date_of_birth)} (${calcAge(driver.date_of_birth)} years old)`
+            : "—"}
+        </p>
+        <p style={{ margin: "2px 0", color: "#555", fontSize: 15 }}>
+          Place of birth: {driver.place_of_birth ?? "—"}
+        </p>
       </header>
 
       {driver.notes && <p style={{ color: "#555", marginTop: 12 }}>{driver.notes}</p>}
