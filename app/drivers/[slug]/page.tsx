@@ -453,27 +453,18 @@ export default async function DriverPage({ params }: PageProps) {
       </p>
 
       <header style={{ marginTop: 8 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 16,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            {driver.headshot_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={driver.headshot_url}
-                alt=""
-                width={72}
-                height={72}
-                style={{ borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e5e5" }}
-              />
-            )}
-            <h1 style={{ marginBottom: 2, textAlign: "left" }}>{driver.full_name}</h1>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {driver.headshot_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={driver.headshot_url}
+              alt=""
+              width={72}
+              height={72}
+              style={{ borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e5e5" }}
+            />
+          )}
+          <h1 style={{ marginBottom: 2, textAlign: "left" }}>{driver.full_name}</h1>
           {driver.nationality && (
             <div style={{ fontSize: 40, lineHeight: 1.1, flexShrink: 0 }}>
               {flagEmoji(driver.nationality)}
