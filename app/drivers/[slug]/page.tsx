@@ -462,6 +462,7 @@ export default async function DriverPage({ params }: PageProps) {
       </p>
 
       <header style={{ marginTop: 8 }}>
+        <style>{`.flag-box .flag-cap{opacity:0;transition:opacity .15s ease}.flag-box:hover .flag-cap{opacity:1}`}</style>
         <div
           style={{
             display: "flex",
@@ -484,11 +485,11 @@ export default async function DriverPage({ params }: PageProps) {
             <h1 style={{ marginBottom: 2, textAlign: "left" }}>{driver.full_name}</h1>
           </div>
           {driver.nationality && (
-            <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div className="flag-box" style={{ textAlign: "right", flexShrink: 0 }}>
               <div style={{ fontSize: 40, lineHeight: 1.1 }}>
                 {flagEmoji(driver.nationality)}
               </div>
-              <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>
+              <div className="flag-cap" style={{ fontSize: 13, color: "#888", marginTop: 2 }}>
                 {countryName(driver.nationality)}
               </div>
             </div>
