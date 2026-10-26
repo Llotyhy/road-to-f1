@@ -33,6 +33,12 @@ export type CareerRow = {
   multiTeams: TeamStint[] | null;
 };
 
+const ROOKIE_TITLE = "Rookie season";
+const FT_TITLE =
+  "Full-time — raced for the whole season (missing races through injury still counts as full-time)";
+const PT_TITLE =
+  "Part-time — raced only part of the season and/or stood in for another driver";
+
 function Badge({ label, color, title }: { label: string; color: string; title: string }) {
   return (
     <span
@@ -51,11 +57,22 @@ function Badge({ label, color, title }: { label: string; color: string; title: s
   );
 }
 
-const ROOKIE_TITLE = "Rookie season";
-const FT_TITLE =
-  "Full-time — raced for this team for the whole season (missing races through injury still counts as full-time)";
-const PT_TITLE =
-  "Part-time — raced only part of the season and/or stood in for another driver";
+/** One badge per season, most important first: FT -> PT -> R. */
+function seasonBadge(r: CareerRow): { label: string; color: string; title: string } | null {
+  let isFt = false;
+  let isPt = false;
+  if (r.multiTeams) {
+    isFt = r.multiTeams.some((t) => t.ft);
+    isPt = !isFt;
+  } else if (r.ft !== null) {
+    isFt = r.ft;
+    isPt = !r.ft;
+  }
+  if (isFt) return { label: "FT", color: "#16a34a", title: FT_TITLE };
+  if (isPt) return { label: "PT", color: "#6b7280", title: PT_TITLE };
+  if (r.rookie) return { label: "R", color: "#f97316", title: ROOKIE_TITLE };
+  return null;
+}
 
 export default function CareerTable({ rows }: { rows: CareerRow[] }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -106,16 +123,17 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
       <tbody>
         {rows.map((r) => {
           const isOpen = !!expanded[r.key];
+          const badge = seasonBadge(r);
           return (
             <Fragment key={r.key}>
               <tr>
                 <td style={td}>{r.year}</td>
-                <td style={{ ...td, ...num }}>{r.age ?? "—"}</td>
+                <td style={td}>{r.age ?? "—"}</td>
                 <td style={td}>
                   <Link href={`/championships/${r.championshipId}?year=${r.year}`} style={link}>
                     {r.shortName}
                   </Link>
-                  {r.rookie && <Badge label="R" color="#f97316" title={ROOKIE_TITLE} />}
+                  {badge && <Badge label={badge.label} color={badge.color} title={badge.title} />}
                 </td>
                 <td style={{ ...td, whiteSpace: "nowrap" }}>
                   {r.multiTeams ? (
@@ -125,19 +143,10 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
                       onClick={() => setExpanded((prev) => ({ ...prev, [r.key]: !prev[r.key] }))}
                       aria-expanded={isOpen}
                     >
-                      {isOpen ? "▾" : "▸"} {r.multiTeams.length}{" "}
-                      {r.multiTeams.length === 1 ? "team" : "teams"}
+                      {isOpen ? "▾" : "▸"} {r.multiTeams.length} teams
                     </button>
                   ) : (
-                    <>
-                      {r.teamName || "—"}
-                      {r.ft !== null &&
-                        (r.ft ? (
-                          <Badge label="FT" color="#16a34a" title={FT_TITLE} />
-                        ) : (
-                          <Badge label="PT" color="#6b7280" title={PT_TITLE} />
-                        ))}
-                    </>
+                    r.teamName || "—"
                   )}
                 </td>
                 <td style={{ ...td, ...num }}>
@@ -154,14 +163,12 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
               </tr>
               {r.multiTeams && isOpen &&
                 r.multiTeams.map((t) => (
-                  <tr key={`${r.key}-${t.teamName}`} style={{ background: "#fafafa" }}>
+                  <tr key={`${r.key}-${t.teamName}`}>
                     <td style={td} />
                     <td style={td} />
                     <td style={td} />
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
-                      <span style={{ color: "#555" }}>
-                        {t.teamName} ({t.raceList})
-                      </span>
+                      {t.teamName} ({t.raceList})
                       {t.ft ? (
                         <Badge label="FT" color="#16a34a" title={FT_TITLE} />
                       ) : (
@@ -184,4 +191,3 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
     </table>
   );
 }
-
