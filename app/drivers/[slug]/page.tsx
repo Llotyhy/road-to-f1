@@ -466,7 +466,16 @@ export default async function DriverPage({ params }: PageProps) {
           )}
           <h1 style={{ marginBottom: 2, textAlign: "left" }}>{driver.full_name}</h1>
           {driver.nationality && (
-            <div style={{ fontSize: 40, lineHeight: 1.1, flexShrink: 0 }}>
+            // Emoji glyphs sit high in their line box, so nudge the flag down
+            // a few pixels to optically align it with the driver name.
+            <div
+              style={{
+                fontSize: 40,
+                lineHeight: 1.1,
+                flexShrink: 0,
+                transform: "translateY(6px)",
+              }}
+            >
               {flagEmoji(driver.nationality)}
             </div>
           )}
