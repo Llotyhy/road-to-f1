@@ -264,10 +264,17 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     sessions.forEach((s, i) => raceNo.set(s.id, i + 1));
   }
 
-  // A race session with zero result rows never ran — it was cancelled
-  // (weather, crash, ...). Races with results but no winner keep the
-  // "no result yet" fallback below.
-  const sessionsWithResults = new Set(results.map((r) => r.session_id));
+  // A race session with zero CLASSIFIED result rows never ran — it was
+  // cancelled (weather, crash, ...). Checking finish_position (not raw
+  // row count) also covers sessions that carry only non-start rows —
+  // e.g. the abandoned 2025 F3 Spa feature race, which stored a single
+  // dns row for the pole-sitter's pole points. Races with classified
+  // results but no winner keep the "no result yet" fallback below.
+  const sessionsWithResults = new Set(
+    results
+      .filter((r) => r.finish_position !== null)
+      .map((r) => r.session_id)
+  );
 
   // Group the season's results per driver and per team stint, skipping
   // non-starts (a driver who DNS'd a race did not compete in it).
