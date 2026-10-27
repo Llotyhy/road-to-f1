@@ -71,12 +71,17 @@ type SLRow = {
 
 type WinnerRow = { session_id: string; driver: { full_name: string; slug: string } | null };
 
-const FLAGS: Record<string, string> = {
-  AT: "🇦🇹", AU: "🇦🇺", BE: "🇧🇪", BR: "🇧🇷", CA: "🇨🇦", CH: "🇨🇭",
-  DE: "🇩🇪", DK: "🇩🇰", ES: "🇪🇸", FR: "🇫🇷", GB: "🇬🇧", HU: "🇭🇺",
-  IT: "🇮🇹", JP: "🇯🇵", MC: "🇲🇨", NL: "🇳🇱", PT: "🇵🇹", US: "🇺🇸",
-  ZA: "🇿🇦",
-};
+/** Country flag emoji computed from an ISO alpha-2 code via
+ *  regional-indicator pairs — works for every country, no hard-coded list. */
+function flagEmoji(code: string | null): string {
+  if (!code) return "";
+  const cc = code.toUpperCase().replace(/[^A-Z]/g, "");
+  if (cc.length !== 2) return "";
+  return String.fromCodePoint(
+    0x1f1e6 + cc.charCodeAt(0) - 65,
+    0x1f1e6 + cc.charCodeAt(1) - 65
+  );
+}
 
 /** Browser-tab names for the championships (the URL id alone reads poorly). */
 const CHAMPIONSHIP_TITLES: Record<string, string> = {
@@ -401,7 +406,7 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
   const accent = championship.color ?? "#1d4ed8";
 
   return (
-    <main style={{ maxWidth: 920, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui, sans-serif" }}>
+    <main style={{ maxWidth: 1100, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui, sans-serif" }}>
       <p style={{ fontSize: 14 }}>
         <Link href="/" style={{ color: "#666", textDecoration: "none" }}>
           ← Road to F1
@@ -480,7 +485,7 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
                   <td style={td}>{w.round}</td>
                   <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtRange(w.date_from, w.date_to)}</td>
                   <td style={td}>
-                    {w.country ? `${FLAGS[w.country] ?? ""} ` : ""}
+                    {w.country ? `${flagEmoji(w.country)} ` : ""}
                     {w.name}
                     {w.circuit ? (
                       <span style={{ color: "#777" }}> — {w.circuit}</span>
