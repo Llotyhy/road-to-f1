@@ -390,6 +390,19 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     multiTeams: r.multiTeams,
   }));
 
+  // Season status: a season is complete when its (scheduled) end date has
+  // passed with no end date missing - drives the "Final standings" vs
+  // "Current standings" header. Rounds done = weekends with at least one
+  // classified result (live from the data, no flags needed).
+  const today = new Date().toISOString().slice(0, 10); // UTC date
+  const seasonComplete = !season || !season.ends_on || today > season.ends_on;
+  const totalRounds = weekends.length;
+  const roundsDone = new Set(
+    weekends
+      .filter((w) => w.sessions.some((s) => sessionsWithResults.has(s.id)))
+      .map((w) => w.round)
+  ).size;
+
   const th = {
     textAlign: "left" as const,
     padding: "8px 10px",
@@ -455,7 +468,14 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
 
       {season && standingsRows.length > 0 && (
         <section aria-label="Championship standings">
-          <h2 style={{ fontSize: 20, marginBottom: 8 }}>Standings</h2>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>
+            {seasonComplete ? "Final standings" : "Current standings"}
+          </h2>
+          {!seasonComplete && (
+            <p style={{ margin: "0 0 12px", color: "#777", fontSize: 14 }}>
+              After {roundsDone}/{totalRounds} rounds
+            </p>
+          )}
           <StandingsTable rows={standingsRows} />
         </section>
       )}
@@ -516,7 +536,9 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
                               <span
                                 style={{ color: "#999", fontStyle: "italic" }}
                               >
-                                Race cancelled
+                                {(s.scheduled_on ?? "") >= today
+                                  ? "Upcoming"
+                                  : "Race cancelled"}
                               </span>
                             ) : (
                               <span style={{ color: "#999" }}>no result yet</span>
