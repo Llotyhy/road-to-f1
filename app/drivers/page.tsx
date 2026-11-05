@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Metadata } from "next";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import DriverSearch from "./driver-search";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,9 @@ export type DriverCard = {
   series: string[];
 };
 
+type DriverRow = { slug: string; full_name: string; nationality: string | null };
+type CareerRow = { slug: string; year: number; short_name: string; tier: number | null };
+
 function flagEmoji(code: string): string {
   if (!/^[A-Za-z]{2}$/.test(code)) return "🏳";
   const upper = code.toUpperCase();
@@ -48,6 +52,40 @@ function natName(code: string | null): string {
   }
 }
 
+/** Supabase caps every query response at 1000 rows by default; page through in
+ *  batches so all drivers (and all career rows) are actually fetched. */
+async function fetchAllDrivers(
+  supabase: SupabaseClient
+): Promise<{ data: DriverRow[]; error: string | null }> {
+  const all: DriverRow[] = [];
+  for (let start = 0; ; start += 1000) {
+    const { data, error } = await supabase
+      .from("drivers")
+      .select("slug, full_name, nationality")
+      .order("full_name")
+      .range(start, start + 999);
+    if (error) return { data: [], error: error.message };
+    const rows = (data ?? []) as unknown as DriverRow[];
+    all.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return { data: all, error: null };
+}
+
+async function fetchAllCareerRows(supabase: SupabaseClient): Promise<CareerRow[]> {
+  const all: CareerRow[] = [];
+  for (let start = 0; ; start += 1000) {
+    const { data } = await supabase
+      .from("v_driver_career")
+      .select("slug, year, short_name, tier")
+      .range(start, start + 999);
+    const rows = (data ?? []) as unknown as CareerRow[];
+    all.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return all;
+}
+
 export default async function DriversIndex({
   searchParams,
 }: {
@@ -64,22 +102,19 @@ export default async function DriversIndex({
     );
   }
 
-  const [{ data: drivers, error }, { data: career }] = await Promise.all([
-    supabase.from("drivers").select("slug, full_name, nationality").order("full_name"),
-    supabase.from("v_driver_career").select("slug, year, short_name, tier"),
+  const [{ data: drivers, error }, careerRows] = await Promise.all([
+    fetchAllDrivers(supabase),
+    fetchAllCareerRows(supabase),
   ]);
 
   if (error) {
     return (
       <main style={{ maxWidth: 640, margin: "2rem auto", padding: "0 1rem" }}>
         <h1>Drivers</h1>
-        <p>Database error: {error.message}</p>
+        <p>Database error: {error}</p>
       </main>
     );
   }
-
-  type CareerRow = { slug: string; year: number; short_name: string; tier: number | null };
-  const careerRows = (career ?? []) as unknown as CareerRow[];
 
   // Aggregate career info per driver slug
   const info = new Map<string, { years: Set<number>; series: Map<string, number>; seasons: Set<string> }>();
@@ -93,11 +128,7 @@ export default async function DriversIndex({
     info.set(r.slug, e);
   }
 
-  const cards: DriverCard[] = ((drivers ?? []) as unknown as {
-    slug: string;
-    full_name: string;
-    nationality: string | null;
-  }[]).map((d) => {
+  const cards: DriverCard[] = drivers.map((d) => {
     const e = info.get(d.slug);
     const years = e ? Array.from(e.years) : [];
     const series = Array.from((e?.series ?? new Map<string, number>()).entries())
@@ -130,4 +161,3 @@ export default async function DriversIndex({
     </main>
   );
 }
-
