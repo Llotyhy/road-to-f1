@@ -153,7 +153,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title,
     description,
-    openGraph: { title, description, url: `/championships/${id}` },
+    openGraph: { title, description, url: `/championships/${id}`, images: [{ url: "/opengraph-image.png", width: 1200, height: 630 }] },
   };
 }
 
