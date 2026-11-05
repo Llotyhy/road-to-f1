@@ -344,7 +344,7 @@ export default async function AcademyDetail({
                 }}
               >
                 <strong style={{ fontWeight: 600 }}>{g.name}</strong>
-                <span style={{ color: "#64748b }}> · F1 since {g.since}</span>
+                <span style={{ color: "#64748b" }}> · F1 since {g.since}</span>
               </span>
             ))}
           </div>
@@ -407,7 +407,7 @@ export default async function AcademyDetail({
                 }}
               >
                 {t.flag} <strong style={{ color: "var(--text)", fontWeight: 600 }}>{t.fullName}</strong>
-                <span style={{ color: "#64748b }}> · {t.shortName} {t.year}</span>
+                <span style={{ color: "#64748b" }}> · {t.shortName} {t.year}</span>
               </span>
             ))}
           </div>
@@ -422,4 +422,3 @@ export default async function AcademyDetail({
     </main>
   );
 }
-
