@@ -40,6 +40,7 @@ type EntryRow = {
   driver_id: string;
   rookie: boolean;
   final_position: number | null;
+  final_points: number | string | null;
   driver: { id: string; full_name: string; slug: string } | null;
   team: { id: string; name: string } | null;
 };
@@ -147,7 +148,13 @@ function formatRaceList(races: number[]): string {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  return { title: `${championshipTitle(id)} - Road to F1` };
+  const title = `${championshipTitle(id)} - Road to F1`;
+  const description = `${championshipTitle(id)} standings, calendar and race results on Road to F1 — the junior single-seater database.`;
+  return {
+    title,
+    description,
+    openGraph: { title, description, url: `/championships/${id}` },
+  };
 }
 
 export default async function ChampionshipPage({ params, searchParams }: PageProps) {
@@ -207,7 +214,7 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     const { data: entriesData } = await supabase
       .from("season_entries")
       .select(
-        "driver_id, rookie, final_position, driver:drivers(id, full_name, slug), team:teams(id, name)"
+        "driver_id, rookie, final_position, final_points, driver:drivers(id, full_name, slug), team:teams(id, name)"
       )
       .eq("season_id", season.id);
     entries = (entriesData ?? []) as unknown as EntryRow[];
@@ -474,6 +481,13 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
           {!seasonComplete && (
             <p style={{ margin: "0 0 12px", color: "#777", fontSize: 14 }}>
               After {roundsDone}/{totalRounds} rounds
+            </p>
+          )}
+          {entries.some((e) => e.final_points !== null) && (
+            <p style={{ margin: "0 0 12px", color: "#777", fontSize: 14 }}>
+              Points are the officials&rsquo; final totals — the{" "}
+              <em>décompte</em> drops each driver&rsquo;s worst meeting of
+              the season.
             </p>
           )}
           <StandingsTable rows={standingsRows} />
