@@ -62,10 +62,28 @@ function WordmarkChevrons({ size = 13 }: { size?: number }) {
   );
 }
 
+const NAV = [
+  { href: "/championships", label: "Championships" },
+  { href: "/drivers", label: "Drivers" },
+  { href: "/about", label: "About" },
+  { href: "/support", label: "Support ♥", accent: "#f97316" },
+];
+
 export default function SiteHeader() {
   return (
     <header style={{ borderBottom: "1px solid #1e293b" }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0.65rem 1rem" }}>
+      <style>{`.r2f1-nav a:hover{color:var(--text)}`}</style>
+      <div
+        style={{
+          maxWidth: 1100,
+          margin: "0 auto",
+          padding: "0.65rem 1rem",
+          display: "flex",
+          alignItems: "center",
+          gap: 24,
+          flexWrap: "wrap",
+        }}
+      >
         <Link
           href="/"
           aria-label="Road to F1 - home"
@@ -93,6 +111,26 @@ export default function SiteHeader() {
             F1
           </span>
         </Link>
+        <nav
+          className="r2f1-nav"
+          aria-label="Main navigation"
+          style={{ display: "flex", alignItems: "center", gap: 18, marginLeft: "auto", flexWrap: "wrap" }}
+        >
+          {NAV.map((n) => (
+            <Link
+              key={n.href}
+              href={n.href}
+              style={{
+                fontSize: 14,
+                textDecoration: "none",
+                color: n.accent ?? "#94a3b8",
+                fontWeight: n.accent ? 600 : 400,
+              }}
+            >
+              {n.label}
+            </Link>
+          ))}
+        </nav>
       </div>
     </header>
   );
