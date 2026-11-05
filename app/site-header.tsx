@@ -1,49 +1,20 @@
 import Link from "next/link";
 
-/** The Ladder — the site mark: five rungs climbing F4 to F1 in class colours. */
-function LadderMark({ size = 28 }: { size?: number }) {
-  const rungs = [
-    { d: "M10 58 L32 47 L54 58", color: "#fafafa" }, // F4
-    { d: "M10 48 L32 37 L54 48", color: "#1e3a8a" }, // FREC
-    { d: "M10 37 L32 26 L54 37", color: "#f97316" }, // F3
-    { d: "M10 26 L32 15 L54 26", color: "#2563eb" }, // F2
-    { d: "M10 15.5 L32 4.5 L54 15.5", color: "#e10600" }, // F1
-  ];
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      aria-hidden="true"
-      style={{ display: "block" }}
-    >
-      {rungs.map((r) => (
-        <path
-          key={r.color}
-          d={r.d}
-          fill="none"
-          stroke={r.color}
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      ))}
-    </svg>
-  );
-}
-
-/** Wordmark chevrons — F3, F2, F1 climbing towards the "F1" they point at. */
+/** Wordmark chevrons — the five rungs of the ladder, F4 to F1, in class
+ *  colours. Matches the opengraph-image lockup. */
 function WordmarkChevrons({ size = 13 }: { size?: number }) {
   const chevrons = [
-    { d: "M2 1.5 L7 7 L2 12.5", color: "#f97316" }, // F3
-    { d: "M10 1.5 L15 7 L10 12.5", color: "#2563eb" }, // F2
-    { d: "M18 1.5 L23 7 L18 12.5", color: "#e10600" }, // F1
+    { d: "M2 1.5 L7 7 L2 12.5", color: "#fafafa" }, // F4
+    { d: "M10 1.5 L15 7 L10 12.5", color: "#1e3a8a" }, // Formula Regional
+    { d: "M18 1.5 L23 7 L18 12.5", color: "#f97316" }, // F3
+    { d: "M26 1.5 L31 7 L26 12.5", color: "#2563eb" }, // F2
+    { d: "M34 1.5 L39 7 L34 12.5", color: "#e10600" }, // F1
   ];
   return (
     <svg
-      width={(size * 25) / 14}
+      width={(size * 41) / 14}
       height={size}
-      viewBox="0 0 25 14"
+      viewBox="0 0 41 14"
       aria-hidden="true"
       style={{ display: "block" }}
     >
@@ -65,8 +36,8 @@ function WordmarkChevrons({ size = 13 }: { size?: number }) {
 const NAV = [
   { href: "/championships", label: "Championships" },
   { href: "/drivers", label: "Drivers" },
-  { href: "/about", label: "About" },
-  { href: "/support", label: "Support ♥", accent: "#f97316" },
+  { href: "/academies", label: "Academies", accent: "#f97316" },
+  { href: "/rankings", label: "Rankings" },
 ];
 
 export default function SiteHeader() {
@@ -94,7 +65,6 @@ export default function SiteHeader() {
             textDecoration: "none",
           }}
         >
-          <LadderMark size={28} />
           <span
             style={{
               display: "inline-flex",
