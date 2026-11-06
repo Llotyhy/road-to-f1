@@ -3,7 +3,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const dynamic = "force-dynamic";
+// ISR: prerendered at deploy time and refreshed hourly (plus an immediate
+// refresh when /api/revalidate is pinged after an ingestion).
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   description:
