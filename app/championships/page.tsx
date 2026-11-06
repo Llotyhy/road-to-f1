@@ -45,8 +45,8 @@ const CARD: CSSProperties = {
 // the order list is updated.
 const LADDER_ORDER = [
   "f2",
-  "super-formula",
   "f3",
+  "super-formula",
   "macau-gp",
   "freca",
   "frme",
