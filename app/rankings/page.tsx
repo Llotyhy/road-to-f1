@@ -422,14 +422,14 @@ export default async function RankingsPage() {
             No Super Licence points recorded in the {windowYears[0]}–{windowYears[2]} window yet.
           </p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="r2f1-tablewrap" style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: hasProjections ? 620 : 560 }}>
               <thead>
                 <tr>
                   <th style={numTh}>#</th>
                   <th style={th}>Driver</th>
                   {windowYears.map((y) => (
-                    <th key={y} style={numTh}>{y}</th>
+                    <th key={y} className="r2f1-col-md" style={numTh}>{y}</th>
                   ))}
                   <th style={numTh}>Total</th>
                   {hasProjections && <th style={numTh}>Projected</th>}
@@ -453,7 +453,7 @@ export default async function RankingsPage() {
                         </Link>
                       </td>
                       {windowYears.map((y) => (
-                        <td key={y} style={{ ...numTd, color: e.perYear[y] > 0 ? "inherit" : "#334155" }}>
+                        <td key={y} className="r2f1-col-md" style={{ ...numTd, color: e.perYear[y] > 0 ? "inherit" : "#334155" }}>
                           {e.perYear[y] > 0 ? e.perYear[y] : "—"}
                         </td>
                       ))}
