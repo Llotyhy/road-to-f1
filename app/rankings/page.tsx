@@ -5,7 +5,6 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Rankings",
   description:
     "FIA Super Licence standings, computed live from every result in the database — who is closest to a Formula 1 seat — plus what's coming next.",
   openGraph: {
