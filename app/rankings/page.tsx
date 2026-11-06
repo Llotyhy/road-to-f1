@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Rankings",
@@ -82,14 +81,6 @@ export default function RankingsPage() {
           </div>
         ))}
       </div>
-
-      <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.6, paddingBottom: "2rem" }}>
-        Want one of these sooner?{" "}
-        <Link href="mailto:hello@roadtof1.app" style={{ color: "#f97316" }}>
-          hello@roadtof1.app
-        </Link>
-      </p>
     </main>
   );
 }
-
