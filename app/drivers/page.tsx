@@ -6,7 +6,6 @@ import DriverSearch from "./driver-search";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Drivers",
   description:
     "Search every driver in the Road to F1 database: career spans, series joined, nationalities and profiles.",
   openGraph: {
