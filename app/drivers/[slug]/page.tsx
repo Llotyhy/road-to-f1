@@ -156,7 +156,7 @@ function formatRaceList(races: number[]): string {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const supabase = getSupabaseAdminClient();
-  if (!supabase) return { title: "Road to F1" };
+  if (!supabase) return {};
   const { data } = await supabase
     .from("drivers")
     .select("full_name")
@@ -165,7 +165,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const name =
     (data as unknown as { full_name: string } | null)?.full_name ??
     slug.replace(/-/g, " ");
-  return { title: `${name} - Road to F1` };
+  // No metadata.title here: the browser tab stays "Road to F1" on every
+  // page (the root layout title). The per-driver name is used for link
+  // previews only.
+  return {
+    openGraph: {
+      title: `${name} — Road to F1`,
+      description: `${name}: career ladder, season-by-season results and Super Licence progress on Road to F1 — the junior single-seater database.`,
+      url: `/drivers/${slug}`,
+      images: [{ url: "/opengraph-image.png", width: 1200, height: 630 }],
+    },
+  };
 }
 
 export default async function DriverPage({ params }: PageProps) {
