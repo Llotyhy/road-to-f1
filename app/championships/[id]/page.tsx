@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { unstable_cache } from "next/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import StandingsTable from "./standings-table";
 import type { StandingRow } from "./standings-table";
 
+// Per-request render (the ?year= season pills read searchParams, which
+// opts the route out of the full route cache) — instead, every query below
+// is cached at the data layer, so each render is a few milliseconds.
 export const dynamic = "force-dynamic";
 
 type PageProps = {
@@ -221,99 +225,163 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     );
   }
 
-  const { data: championshipData } = await supabase
-    .from("championships")
-    .select("id, name, short_name, kind, tier, color")
-    .eq("id", id)
-    .maybeSingle();
-  const championship = championshipData as unknown as Championship | null;
-  if (!championship) notFound();
+  // Everything the page needs, in one data-layer cache entry. The route
+  // renders per request (the ?year= season pills), so the full route cache
+  // cannot hold it — instead the queries are wrapped in unstable_cache,
+  // keyed on (championship, year), living for one hour or until
+  // /api/revalidate purges the racing-data tag right after an ingestion.
+  // Inside the cache the queries run as three parallel batches instead of
+  // nine sequential round-trips.
+  const loadData = unstable_cache(
+    async () => {
+      const sb = getSupabaseAdminClient();
+      if (!sb) {
+        return {
+          championship: null as Championship | null,
+          seasons: [] as Season[],
+          season: null as Season | null,
+          standings: [] as StandingsViewRow[],
+          entries: [] as EntryRow[],
+          weekends: [] as WeekendRow[],
+          results: [] as ResultRow[],
+          slRows: [] as SLRow[],
+          winnersList: [] as Array<{ session_id: string; name: string; slug: string | null }>,
+          allocations: [] as AllocationRow[],
+        };
+      }
 
-  // All ingested seasons for this championship, newest first.
-  const { data: seasonsData } = await supabase
-    .from("seasons")
-    .select("id, year, starts_on, ends_on")
-    .eq("championship_id", id)
-    .order("year", { ascending: false });
-  const seasons = (seasonsData ?? []) as unknown as Season[];
+      // Batch 1: the championship row, its seasons and its SL allocation
+      // table — all keyed on the route id alone.
+      const [championshipRes, seasonsRes, allocationRes] = await Promise.all([
+        sb
+          .from("championships")
+          .select("id, name, short_name, kind, tier, color")
+          .eq("id", id)
+          .maybeSingle(),
+        sb
+          .from("seasons")
+          .select("id, year, starts_on, ends_on")
+          .eq("championship_id", id)
+          .order("year", { ascending: false }),
+        sb
+          .from("sl_points_allocation")
+          .select("position, points, valid_from_year, valid_to_year")
+          .eq("championship_id", id),
+      ]);
+      const championship = championshipRes.data as unknown as Championship | null;
+      const seasons = (seasonsRes.data ?? []) as unknown as Season[];
 
-  // Selected season: ?year= param if it matches, else the latest season.
-  const wantedYear = year ? Number(year) : null;
-  const season =
-    (wantedYear !== null && !Number.isNaN(wantedYear)
-      ? seasons.find((s) => s.year === wantedYear)
-      : undefined) ?? seasons[0] ?? null;
+      // Selected season: ?year= param if it matches, else the latest season.
+      const wantedYear = year ? Number(year) : null;
+      const season =
+        (wantedYear !== null && !Number.isNaN(wantedYear)
+          ? seasons.find((s) => s.year === wantedYear)
+          : undefined) ?? seasons[0] ?? null;
 
-  let standings: StandingsViewRow[] = [];
-  let entries: EntryRow[] = [];
-  let weekends: WeekendRow[] = [];
-  let results: ResultRow[] = [];
-  let allocations: AllocationRow[] = [];
-  const slByDriver = new Map<string, number>();
-  const winners = new Map<string, { name: string; slug: string | null }>();
+      let standings: StandingsViewRow[] = [];
+      let entries: EntryRow[] = [];
+      let weekends: WeekendRow[] = [];
+      let results: ResultRow[] = [];
+      let slRows: SLRow[] = [];
+      const winnersList: Array<{ session_id: string; name: string; slug: string | null }> = [];
 
-  if (season) {
-    const { data: standingsData } = await supabase
-      .from("v_championship_standings")
-      .select("driver_id, points, wins, podiums, fastest_laps")
-      .eq("season_id", season.id);
-    standings = (standingsData ?? []) as unknown as StandingsViewRow[];
+      if (championship && season) {
+        // Batch 2: standings, entries, the calendar and the season's Super
+        // Licence points — all keyed on the selected season.
+        const [standingsRes, entriesRes, weekendsRes, slRes] = await Promise.all([
+          sb
+            .from("v_championship_standings")
+            .select("driver_id, points, wins, podiums, fastest_laps")
+            .eq("season_id", season.id),
+          sb
+            .from("season_entries")
+            .select(
+              "driver_id, rookie, final_position, final_points, driver:drivers(id, full_name, slug, nationality, date_of_birth), team:teams(id, name)"
+            )
+            .eq("season_id", season.id),
+          sb
+            .from("race_weekends")
+            .select(
+              "round, name, circuit, country, date_from, date_to, sessions(id, name, scheduled_on)"
+            )
+            .eq("season_id", season.id)
+            .order("round"),
+          sb
+            .from("v_superlicence_season")
+            .select("driver_id, sl_points")
+            .eq("championship_id", id)
+            .eq("year", season.year),
+        ]);
+        standings = (standingsRes.data ?? []) as unknown as StandingsViewRow[];
+        entries = (entriesRes.data ?? []) as unknown as EntryRow[];
+        weekends = (weekendsRes.data ?? []) as unknown as WeekendRow[];
+        slRows = (slRes.data ?? []) as unknown as SLRow[];
 
-    const { data: entriesData } = await supabase
-      .from("season_entries")
-      .select(
-        "driver_id, rookie, final_position, final_points, driver:drivers(id, full_name, slug, nationality, date_of_birth), team:teams(id, name)"
-      )
-      .eq("season_id", season.id);
-    entries = (entriesData ?? []) as unknown as EntryRow[];
-
-    const { data: weekendsData } = await supabase
-      .from("race_weekends")
-      .select("round, name, circuit, country, date_from, date_to, sessions(id, name, scheduled_on)")
-      .eq("season_id", season.id)
-      .order("round");
-    weekends = (weekendsData ?? []) as unknown as WeekendRow[];
-
-    const sessionIds = weekends.flatMap((w) => w.sessions.map((s) => s.id));
-    if (sessionIds.length > 0) {
-      const { data: winnersData } = await supabase
-        .from("results")
-        .select("session_id, driver:drivers(full_name, slug)")
-        .eq("finish_position", 1)
-        .in("session_id", sessionIds);
-      for (const w of (winnersData ?? []) as unknown as WinnerRow[]) {
-        if (w.driver?.full_name) {
-          winners.set(w.session_id, { name: w.driver.full_name, slug: w.driver.slug ?? null });
+        // Batch 3: the season's race winners and full per-race results.
+        const sessionIds = weekends.flatMap((w) => w.sessions.map((s) => s.id));
+        if (sessionIds.length > 0) {
+          const [winnersRes, resultsRes] = await Promise.all([
+            sb
+              .from("results")
+              .select("session_id, driver:drivers(full_name, slug)")
+              .eq("finish_position", 1)
+              .in("session_id", sessionIds),
+            sb
+              .from("results")
+              .select(
+                "session_id, driver_id, finish_position, status, points, fastest_lap, team:teams(id, name)"
+              )
+              .in("session_id", sessionIds),
+          ]);
+          for (const w of (winnersRes.data ?? []) as unknown as WinnerRow[]) {
+            if (w.driver?.full_name) {
+              winnersList.push({
+                session_id: w.session_id,
+                name: w.driver.full_name,
+                slug: w.driver.slug ?? null,
+              });
+            }
+          }
+          results = (resultsRes.data ?? []) as unknown as ResultRow[];
         }
       }
 
-      // Per-race results for the season: race counts and per-team stints.
-      const { data: resultsData } = await supabase
-        .from("results")
-        .select(
-          "session_id, driver_id, finish_position, status, points, fastest_lap, team:teams(id, name)"
-        )
-        .in("session_id", sessionIds);
-      results = (resultsData ?? []) as unknown as ResultRow[];
-    }
+      return {
+        championship,
+        seasons,
+        season,
+        standings,
+        entries,
+        weekends,
+        results,
+        slRows,
+        winnersList,
+        allocations: (allocationRes.data ?? []) as unknown as AllocationRow[],
+      };
+    },
+    ["championship-page", id, year ?? "latest"],
+    { revalidate: 3600, tags: ["racing-data"] }
+  );
 
-    // Super Licence points for this championship season.
-    const { data: slData } = await supabase
-      .from("v_superlicence_season")
-      .select("driver_id, sl_points")
-      .eq("championship_id", id)
-      .eq("year", season.year);
-    for (const s of (slData ?? []) as unknown as SLRow[]) {
-      slByDriver.set(s.driver_id, Number(s.sl_points ?? 0));
-    }
+  const loaded = await loadData();
 
-    // Super Licence allocation table for this championship (all versions —
-    // the applicable one is picked per season year below).
-    const { data: allocationData } = await supabase
-      .from("sl_points_allocation")
-      .select("position, points, valid_from_year, valid_to_year")
-      .eq("championship_id", id);
-    allocations = (allocationData ?? []) as unknown as AllocationRow[];
+  const championship = loaded.championship;
+  if (!championship) notFound();
+
+  const seasons = loaded.seasons;
+  const season = loaded.season;
+  const standings = loaded.standings;
+  const entries = loaded.entries;
+  const weekends = loaded.weekends;
+  const results = loaded.results;
+  const allocations = loaded.allocations;
+  const slByDriver = new Map<string, number>();
+  for (const s of loaded.slRows) {
+    slByDriver.set(s.driver_id, Number(s.sl_points ?? 0));
+  }
+  const winners = new Map<string, { name: string; slug: string | null }>();
+  for (const w of loaded.winnersList) {
+    winners.set(w.session_id, { name: w.name, slug: w.slug });
   }
 
   // Race number for every session of the season (calendar order: round, then
