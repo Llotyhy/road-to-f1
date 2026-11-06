@@ -2,7 +2,6 @@ import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "About",
   description:
     "What Road to F1 is, what's inside the database, and where the data comes from.",
   openGraph: {
