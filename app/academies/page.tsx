@@ -6,7 +6,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Academies",
   description:
     "The F1 junior programmes on the Road to F1: current members on the ladder, alumni in the database, and every Formula 1 graduate.",
   openGraph: {
