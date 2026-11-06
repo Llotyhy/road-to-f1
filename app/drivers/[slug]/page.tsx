@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import CareerTable from "./career-table";
+import ProfileTabs from "./profile-tabs";
 import type { CareerRow } from "./career-table";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +69,20 @@ type SLRow = {
 };
 
 type Team = { id: string; name: string };
+
+type Championship = { id: string; name: string };
+
+type AcademyMembershipRow = {
+  academy_id: string;
+  joined_on: string | null;
+  left_on: string | null;
+  academy: {
+    id: string;
+    name: string;
+    short_name: string | null;
+    color: string | null;
+  } | null;
+};
 
 /** Compute the flag emoji from an ISO 3166-1 alpha-2 code. */
 function flagEmoji(code: string): string {
@@ -199,6 +212,32 @@ export default async function DriverPage({ params }: PageProps) {
       seasonsByKey.set(`${s.championship_id}:${s.year}`, s);
     }
   }
+
+  // Full championship names (for the title badges and the silverware tab).
+  const champNames: Record<string, string> = {};
+  if (champIds.length > 0) {
+    const { data: champsData } = await supabase
+      .from("championships")
+      .select("id, name")
+      .in("id", champIds);
+    for (const c of (champsData ?? []) as unknown as Championship[]) {
+      champNames[c.id] = c.name;
+    }
+  }
+
+  // Academy memberships (badges under the bio + the hero colour tint).
+  const { data: membershipData } = await supabase
+    .from("academy_memberships")
+    .select("academy_id, joined_on, left_on, academy:academies(id, name, short_name, color)")
+    .eq("driver_id", driver.id);
+  const memberships = ((membershipData ?? []) as unknown as AcademyMembershipRow[])
+    .slice()
+    .sort((a, b) => {
+      // Current memberships first, most recent join first; then former ones.
+      if (!a.left_on && b.left_on) return -1;
+      if (a.left_on && !b.left_on) return 1;
+      return (b.joined_on ?? "").localeCompare(a.joined_on ?? "");
+    });
 
   // Race calendar for those seasons: gives us race numbers (order of every
   // session in the season) and the date of each season's first race.
@@ -434,94 +473,202 @@ export default async function DriverPage({ params }: PageProps) {
     podiums: results.filter(
       (r) => r.finish_position !== null && r.finish_position >= 1 && r.finish_position <= 3
     ).length,
+    fastestLaps: results.filter((r) => r.fastest_lap).length,
+    titles: rows.filter((r) => r.position === 1).length,
   };
 
-  const statBox = {
-    flex: "1 1 0",
-    minWidth: 120,
-    border: "1px solid #e5e5e5",
-    borderRadius: 8,
-    padding: "10px 14px",
-  } as const;
+  // Super Licence: the rolling three-year FIA window (the two completed
+  // seasons plus the current one) and the career total.
+  const currentYear = new Date().getUTCFullYear();
+  const windowFrom = currentYear - 2;
+  const slWindowPts = slRows
+    .filter((s) => s.year >= windowFrom && s.year <= currentYear)
+    .reduce((a, s) => a + Number(s.sl_points ?? 0), 0);
+  const slCareerPts = slRows.reduce((a, s) => a + Number(s.sl_points ?? 0), 0);
+
+  // Hero colour: the driver's current (or most recent) academy.
+  const primaryAcademy = memberships.find((m) => !m.left_on) ?? memberships[0] ?? null;
+  const accent = primaryAcademy?.academy?.color ?? "#475569";
+
+  // Title badges: one chip per championship won, most recent first.
+  const champBadges = rows
+    .filter((r) => r.position === 1)
+    .sort((a, b) => b.year - a.year)
+    .map((r) => ({
+      key: r.key,
+      year: r.year,
+      label: (champNames[r.championshipId] ?? r.shortName).replace(/ Championship$/, "").toUpperCase(),
+    }));
+
+  // Initials for the avatar when there is no headshot.
+  const initials =
+    driver.full_name
+      .split(/\s+/)
+      .filter((w) => /^[A-Za-z]/.test(w))
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "·";
+
+  const CARD2 = "#141d2e";
+  const BORDER = "#1e293b";
+  const MUTED = "#94a3b8";
+  const TEXT = "var(--text)";
+  const ORANGE = "#f97316";
 
   return (
-    <main style={{ maxWidth: 1040, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui, sans-serif" }}>
-      <p style={{ fontSize: 14 }}>
-        <Link href="/" style={{ color: "#666", textDecoration: "none" }}>
-          ← Road to F1
-        </Link>
-      </p>
+    <main style={{ fontFamily: "system-ui, sans-serif" }}>
+      {/* hero */}
+      <div
+        style={{
+          background: `linear-gradient(180deg, ${accent}1f 0%, transparent 100%)`,
+          borderBottom: `1px solid ${BORDER}`,
+        }}
+      >
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 1rem 32px" }}>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+            {driver.headshot_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={driver.headshot_url}
+                alt=""
+                width={104}
+                height={104}
+                style={{
+                  borderRadius: 26,
+                  objectFit: "cover",
+                  border: `1px solid ${accent}55`,
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 104,
+                  height: 104,
+                  borderRadius: 26,
+                  background: `linear-gradient(140deg, ${accent}44, ${CARD2})`,
+                  border: `1px solid ${accent}55`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 38,
+                  fontWeight: 800,
+                  color: accent,
+                  flexShrink: 0,
+                }}
+              >
+                {initials}
+              </div>
+            )}
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <h1
+                style={{
+                  fontSize: 38,
+                  fontWeight: 800,
+                  letterSpacing: "-0.03em",
+                  margin: 0,
+                  color: TEXT,
+                }}
+              >
+                {driver.full_name}{" "}
+                {driver.nationality && (
+                  <span style={{ fontSize: 30, marginLeft: 6 }}>{flagEmoji(driver.nationality)}</span>
+                )}
+              </h1>
+              <p style={{ color: MUTED, margin: "10px 0 0", fontSize: 14 }}>
+                Date of birth:{" "}
+                {driver.date_of_birth
+                  ? `${fmtDob(driver.date_of_birth)} (${calcAge(driver.date_of_birth)} years old)`
+                  : "—"}
+              </p>
+              <p style={{ color: MUTED, margin: "4px 0 0", fontSize: 14 }}>
+                Place of birth: {driver.place_of_birth ?? "—"}
+              </p>
 
-      <header style={{ marginTop: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          {driver.headshot_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={driver.headshot_url}
-              alt=""
-              width={72}
-              height={72}
-              style={{ borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e5e5" }}
-            />
-          )}
-          <h1 style={{ marginBottom: 2, textAlign: "left" }}>{driver.full_name}</h1>
-          {driver.nationality && (
-            // Emoji glyphs sit high in their line box, so nudge the flag down
-            // a few pixels to optically align it with the driver name.
-            <div
-              style={{
-                fontSize: 40,
-                lineHeight: 1.1,
-                flexShrink: 0,
-                transform: "translateY(6px)",
-              }}
-            >
-              {flagEmoji(driver.nationality)}
+              {(champBadges.length > 0 || memberships.length > 0) && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+                  {champBadges.map((b) => (
+                    <span
+                      key={`title-${b.key}`}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                        background: "#f973161f",
+                        color: ORANGE,
+                        border: "1px solid #f9731644",
+                        borderRadius: 999,
+                        padding: "4px 10px",
+                      }}
+                    >
+                      🏆 {b.label} {b.year} CHAMPION
+                    </span>
+                  ))}
+                  {memberships.map((m) => {
+                    const aColor = m.academy?.color ?? MUTED;
+                    const label = m.academy?.short_name ?? m.academy?.name ?? "Academy";
+                    const years = m.joined_on ? m.joined_on.slice(0, 4) : "";
+                    const span = m.left_on
+                      ? ` · ${years}–${m.left_on.slice(0, 4)}`
+                      : years
+                        ? ` · since ${years}`
+                        : "";
+                    return (
+                      <span
+                        key={m.academy_id}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          letterSpacing: "0.06em",
+                          background: `${aColor}1f`,
+                          color: aColor,
+                          border: `1px solid ${aColor}44`,
+                          borderRadius: 999,
+                          padding: "4px 10px",
+                        }}
+                      >
+                        {label}
+                        {span}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
+          </div>
+
+          {driver.notes && (
+            <p style={{ color: MUTED, margin: "16px 0 0", fontSize: 14, maxWidth: 720 }}>
+              {driver.notes}
+            </p>
           )}
         </div>
-        <p style={{ margin: "4px 0 2px", color: "#555", fontSize: 15 }}>
-          Date of birth:{" "}
-          {driver.date_of_birth
-            ? `${fmtDob(driver.date_of_birth)} (${calcAge(driver.date_of_birth)} years old)`
-            : "—"}
-        </p>
-        <p style={{ margin: "2px 0", color: "#555", fontSize: 15 }}>
-          Place of birth: {driver.place_of_birth ?? "—"}
-        </p>
-      </header>
+      </div>
 
-      {driver.notes && <p style={{ color: "#555", marginTop: 12 }}>{driver.notes}</p>}
-
-      {career.length > 0 && (
-        <section aria-label="Career totals" style={{ display: "flex", gap: 10, marginTop: "1.25rem", flexWrap: "wrap" }}>
-          <div style={statBox}>
-            <div style={{ fontSize: 12, color: "#888" }}>Years on the road</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{totals.yearsOnRoad}</div>
-          </div>
-          <div style={statBox}>
-            <div style={{ fontSize: 12, color: "#888" }}>Races on record</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{totals.racesOnRecord}</div>
-          </div>
-          <div style={statBox}>
-            <div style={{ fontSize: 12, color: "#888" }}>Wins</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{totals.wins}</div>
-          </div>
-          <div style={statBox}>
-            <div style={{ fontSize: 12, color: "#888" }}>Podiums</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{totals.podiums}</div>
-          </div>
-        </section>
-      )}
-
-      <section aria-label="Career ladder" style={{ marginTop: "1.5rem" }}>
-        <h2 style={{ fontSize: 20, marginBottom: 8 }}>Career</h2>
-        {rows.length === 0 ? (
-          <p>No seasons recorded for this driver yet.</p>
-        ) : (
-          <CareerTable rows={rows} />
-        )}
-      </section>
+      {/* tabs + content */}
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 1rem 48px" }}>
+        <ProfileTabs
+          data={{
+            rows,
+            champNames,
+            totals: {
+              years: totals.yearsOnRoad,
+              races: totals.racesOnRecord,
+              wins: totals.wins,
+              podiums: totals.podiums,
+              fastestLaps: totals.fastestLaps,
+              titles: totals.titles,
+            },
+            sl: {
+              windowPts: slWindowPts,
+              windowFrom,
+              windowTo: currentYear,
+              careerPts: slCareerPts,
+            },
+          }}
+        />
+      </div>
     </main>
   );
 }
