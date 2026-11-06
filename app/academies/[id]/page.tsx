@@ -112,8 +112,9 @@ export async function generateMetadata({
     const rows = (data ?? []) as unknown as { name: string }[];
     if (rows.length > 0) title = rows[0].name;
   }
+  // No metadata.title: the browser tab stays "Road to F1" on every page
+  // (the root layout title); the academy name is link-preview only.
   return {
-    title,
     description:
       "Members on the ladder right now, alumni in the database, and every Formula 1 graduate — on Road to F1.",
     openGraph: {
