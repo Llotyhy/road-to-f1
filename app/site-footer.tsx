@@ -1,5 +1,39 @@
 import Link from "next/link";
 
+/** Wordmark chevrons — identical to the header lockup (five rungs of the
+ *  ladder, F4 to F1, in class colours). Matches the opengraph-image too. */
+function WordmarkChevrons({ size = 13 }: { size?: number }) {
+  const chevrons = [
+    { d: "M2 1.5 L7 7 L2 12.5", color: "#fafafa" }, // F4
+    { d: "M10 1.5 L15 7 L10 12.5", color: "#1e3a8a" }, // Formula Regional
+    { d: "M18 1.5 L23 7 L18 12.5", color: "#f97316" }, // F3
+    { d: "M26 1.5 L31 7 L26 12.5", color: "#2563eb" }, // F2
+    { d: "M34 1.5 L39 7 L34 12.5", color: "#e10600" }, // F1
+  ];
+  return (
+    <svg
+      width={(size * 41) / 14}
+      height={size}
+      viewBox="0 0 41 14"
+      aria-hidden="true"
+      style={{ display: "block" }}
+    >
+      {chevrons.map((c) => (
+        <path
+          key={c.color}
+          d={c.d}
+          fill="none"
+          stroke={c.color}
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
+    </svg>
+  );
+}
+
+// Same four tabs as the header nav.
 const COLS: { title: string; links: { href: string; label: string }[] }[] = [
   {
     title: "Database",
@@ -7,6 +41,7 @@ const COLS: { title: string; links: { href: string; label: string }[] }[] = [
       { href: "/championships", label: "Championships" },
       { href: "/drivers", label: "Drivers" },
       { href: "/academies", label: "Academies" },
+      { href: "/rankings", label: "Rankings" },
     ],
   },
   {
@@ -34,9 +69,27 @@ export default function SiteFooter() {
         }}
       >
         <div style={{ minWidth: 180 }}>
-          <div style={{ color: "var(--text)", fontWeight: 600, fontSize: 17 }}>
-            Road <span style={{ color: "#f97316" }}>&gt;&gt;&gt;</span> F1
-          </div>
+          <Link
+            href="/"
+            aria-label="Road to F1 - home"
+            style={{ textDecoration: "none", display: "inline-block" }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 17,
+                fontWeight: 600,
+                letterSpacing: "-0.01em",
+                color: "var(--text)",
+              }}
+            >
+              Road
+              <WordmarkChevrons size={13} />
+              F1
+            </span>
+          </Link>
           <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.5, maxWidth: 260 }}>
             The junior single-seater database — results, career ladders and
             rankings on the road to Formula 1.
@@ -53,7 +106,7 @@ export default function SiteFooter() {
           </div>
         ))}
         <div style={{ marginLeft: "auto", textAlign: "right", fontSize: 13 }}>
-          <div>Built by Jasper Stringa</div>
+          <div>Built by Llotyhy</div>
           <div style={{ color: "#64748b", marginTop: 4, maxWidth: 260 }}>
             Unofficial fan project — not affiliated with the FIA or any championship.
           </div>
