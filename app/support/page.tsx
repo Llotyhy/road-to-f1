@@ -2,7 +2,6 @@ import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Support the site",
   description:
     "Road to F1 is free and ad-free. Support options are on their way.",
   openGraph: {
