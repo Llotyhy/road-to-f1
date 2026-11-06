@@ -47,9 +47,10 @@ function Badge({ label, color, title }: { label: string; color: string; title: s
         marginLeft: 6,
         fontSize: 11,
         color,
-        border: `1px solid ${color}`,
+        border: `1px solid ${color}66`,
         borderRadius: 4,
         padding: "0 4px",
+        background: `${color}12`,
       }}
     >
       {label}
@@ -85,14 +86,16 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
   const th = {
     textAlign: "left" as const,
     padding: "8px 10px",
-    borderBottom: "2px solid #ddd",
-    fontSize: 13,
-    color: "#888",
+    borderBottom: "2px solid #1e293b",
+    fontSize: 12,
+    letterSpacing: "0.04em",
+    color: "#64748b",
   };
   const td = {
-    padding: "8px 10px",
-    borderBottom: "1px solid #eee",
+    padding: "9px 10px",
+    borderBottom: "1px solid #1e293b",
     verticalAlign: "top" as const,
+    fontSize: 14,
   };
   const num = { textAlign: "right" as const };
   const link = { color: "#1d4ed8", textDecoration: "none" } as const;
@@ -133,7 +136,7 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
             <Fragment key={r.key}>
               <tr>
                 <td style={td}>{r.year}</td>
-                <td style={td}>{r.age ?? "—"}</td>
+                <td style={{ ...td, color: "#94a3b8" }}>{r.age ?? "—"}</td>
                 <td style={td}>
                   <Link href={`/championships/${r.championshipId}?year=${r.year}`} style={link}>
                     {r.shortName}
@@ -157,7 +160,11 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
                   )}
                 </td>
                 <td style={{ ...td, ...num }}>
-                  {r.position !== null ? <strong>{r.position}</strong> : "—"}
+                  {r.position !== null ? (
+                    <strong style={{ color: r.position === 1 ? "#f97316" : "inherit" }}>{r.position}</strong>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td style={{ ...td, ...num }}>{r.races ?? "—"}</td>
                 <td style={{ ...td, ...num }}>{r.points ?? "—"}</td>
