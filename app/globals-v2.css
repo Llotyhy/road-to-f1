@@ -1,0 +1,50 @@
+:root {
+  --bg: #0b0f14;
+  --text: #e2e8f0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+a {
+  color: #ef4444;
+}
+
+/* ---- Mobile layer -------------------------------------------------- */
+/* Wide result tables scroll inside their own container instead of
+   dragging the whole page sideways; their cells shrink on narrow
+   screens. Per-cell layout lives in inline style objects, which normal
+   CSS cannot override, so the media rules use !important. */
+.r2f1-tablewrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  .r2f1-tablewrap th,
+  .r2f1-tablewrap td {
+    padding: 6px 7px !important;
+    font-size: 12px !important;
+  }
+
+  /* Column triage on phones: .r2f1-col-md cells (Races, Podiums, FL,
+     per-year SL columns) are dropped below 640px so Pos, Driver, Team,
+     Points and Wins stay readable without scrolling. */
+  .r2f1-col-md {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .r2f1-col-sm {
+    display: none;
+  }
+}
