@@ -10,6 +10,17 @@ import type { CareerRow } from "./career-table";
 // /api/revalidate purge that follows a season ingestion.
 export const revalidate = 3600;
 
+// generateStaticParams is what opts a dynamic-param route into ISR caching:
+// with revalidate alone Next keeps a [slug] route fully dynamic
+// (Cache-Control: private, no-store) and every visit re-queries the
+// database. The empty list prebuilds nothing — new driver profiles appear
+// without a redeploy — while every visited slug is rendered on demand,
+// cached at the edge for an hour and purged by /api/revalidate after an
+// ingestion.
+export function generateStaticParams() {
+  return [];
+}
+
 type PageProps = { params: Promise<{ slug: string }> };
 
 type Driver = {
