@@ -1,15 +1,14 @@
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "About",
   description:
-    "What Road to F1 is, what's inside the database, where the data comes from, and how to get in touch.",
+    "What Road to F1 is, what's inside the database, and where the data comes from.",
   openGraph: {
     title: "About — Road to F1",
     description:
-      "What Road to F1 is, what's inside the database, where the data comes from, and how to get in touch.",
+      "What Road to F1 is, what's inside the database, and where the data comes from.",
     images: [{ url: "/opengraph-image.png", width: 1200, height: 630 }],
   },
 };
@@ -59,43 +58,23 @@ export default function AboutPage() {
         </p>
       </section>
 
-      {/* Contact */}
+      {/* Contact — under construction */}
       <section style={SECTION}>
-        <h2 style={{ fontSize: 17, margin: "0 0 10px" }}>Contact</h2>
-        <p style={{ margin: "0 0 14px", color: "#94a3b8", lineHeight: 1.7, fontSize: 14 }}>
-          Questions, corrections, data sources, or just want to talk about junior single-seaters?
-        </p>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a
-            href="mailto:hello@roadtof1.app"
-            style={{
-              display: "inline-block",
-              background: "#f97316",
-              color: "#fff",
-              borderRadius: 8,
-              padding: "10px 18px",
-              fontSize: 14,
-              fontWeight: 600,
-              textDecoration: "none",
-            }}
-          >
-            hello@roadtof1.app
-          </a>
-          <Link
-            href="/support"
-            style={{
-              display: "inline-block",
-              border: "1px solid #1e293b",
-              borderRadius: 8,
-              padding: "10px 18px",
-              fontSize: 14,
-              fontWeight: 600,
-              textDecoration: "none",
-              color: "var(--text)",
-            }}
-          >
-            Support the site ♥
-          </Link>
+        <h2 style={{ fontSize: 17, margin: "0 0 12px" }}>Contact</h2>
+        <div
+          style={{
+            border: "1px dashed #f9731666",
+            borderRadius: 10,
+            padding: "22px 20px",
+          }}
+        >
+          <div style={{ fontSize: 26, lineHeight: 1 }}>🚧</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", marginTop: 10 }}>
+            Under construction
+          </div>
+          <p style={{ color: "#94a3b8", fontSize: 13.5, lineHeight: 1.6, margin: "8px 0 0" }}>
+            A contact address for questions, corrections and data sources is on its way.
+          </p>
         </div>
       </section>
 
@@ -111,4 +90,3 @@ export default function AboutPage() {
     </main>
   );
 }
-
