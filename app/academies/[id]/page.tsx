@@ -3,9 +3,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// ISR: prerendered at deploy time and refreshed hourly (plus an immediate
-// refresh when /api/revalidate is pinged after an ingestion).
+// ISR: rendered on demand, then served from the edge cache for up to an
+// hour (plus an immediate refresh when /api/revalidate is pinged after an
+// ingestion).
 export const revalidate = 3600;
+
+// generateStaticParams is what opts a dynamic-param route into ISR caching:
+// with revalidate alone Next keeps an [id] route fully dynamic
+// (Cache-Control: private, no-store) and every visit re-queries the
+// database. The empty list prebuilds nothing and every visited academy is
+// rendered on demand, then cached at the edge for an hour.
+export function generateStaticParams() {
+  return [];
+}
 
 type AcademyRow = {
   id: string;
