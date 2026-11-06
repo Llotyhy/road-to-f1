@@ -176,8 +176,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params;
   const title = `${championshipTitle(id)} - Road to F1`;
   const description = `${championshipTitle(id)} standings, calendar and race results on Road to F1 — the junior single-seater database.`;
+  // No metadata.title: the browser tab stays "Road to F1" on every page
+  // (the root layout title); the per-championship name is link-preview only.
   return {
-    title,
     description,
     openGraph: { title, description, url: `/championships/${id}`, images: [{ url: "/opengraph-image.png", width: 1200, height: 630 }] },
   };
