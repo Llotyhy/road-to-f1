@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { Metadata } from "next";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -85,6 +86,25 @@ async function fetchAllCareerRows(supabase: SupabaseClient): Promise<CareerRow[]
   return all;
 }
 
+/** The full driver + career dataset the grid is built from, cached at the
+ *  data layer (unstable_cache, racing-data tag, one hour): the page renders
+ *  per request (the ?q= deep-link seeds the client-side search), but the
+ *  paged Supabase fetches below only run when the cache is cold — and
+ *  /api/revalidate purges the tag right after an ingestion. */
+const loadDriversIndexData = unstable_cache(
+  async () => {
+    const supabase = getSupabaseAdminClient();
+    if (!supabase) return null;
+    const [drivers, careerRows] = await Promise.all([
+      fetchAllDrivers(supabase),
+      fetchAllCareerRows(supabase),
+    ]);
+    return { drivers: drivers.data, error: drivers.error, careerRows };
+  },
+  ["drivers-index"],
+  { revalidate: 3600, tags: ["racing-data"] }
+);
+
 export default async function DriversIndex({
   searchParams,
 }: {
@@ -101,10 +121,10 @@ export default async function DriversIndex({
     );
   }
 
-  const [{ data: drivers, error }, careerRows] = await Promise.all([
-    fetchAllDrivers(supabase),
-    fetchAllCareerRows(supabase),
-  ]);
+  const loaded = await loadDriversIndexData();
+  const drivers = loaded?.drivers ?? [];
+  const error = loaded?.error ?? null;
+  const careerRows = loaded?.careerRows ?? [];
 
   if (error) {
     return (
