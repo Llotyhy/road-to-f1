@@ -41,8 +41,21 @@ type EntryRow = {
   rookie: boolean;
   final_position: number | null;
   final_points: number | string | null;
-  driver: { id: string; full_name: string; slug: string } | null;
+  driver: {
+    id: string;
+    full_name: string;
+    slug: string;
+    nationality: string | null;
+    date_of_birth: string | null;
+  } | null;
   team: { id: string; name: string } | null;
+};
+
+type AllocationRow = {
+  position: number;
+  points: number | string;
+  valid_from_year: number;
+  valid_to_year: number | null;
 };
 
 type WeekendRow = {
@@ -82,6 +95,19 @@ function flagEmoji(code: string | null): string {
     0x1f1e6 + cc.charCodeAt(0) - 65,
     0x1f1e6 + cc.charCodeAt(1) - 65
   );
+}
+
+/** Age at a given date (the season's start), in whole years — the same
+ *  convention as the season-by-season table on the driver profiles. */
+function ageAt(dob: string, on: string): number {
+  const d = new Date(dob + "T00:00:00Z");
+  const t = new Date(on + "T00:00:00Z");
+  let age = t.getUTCFullYear() - d.getUTCFullYear();
+  const beforeBirthday =
+    t.getUTCMonth() < d.getUTCMonth() ||
+    (t.getUTCMonth() === d.getUTCMonth() && t.getUTCDate() < d.getUTCDate());
+  if (beforeBirthday) age -= 1;
+  return age;
 }
 
 /** Browser-tab names for the championships (the URL id alone reads poorly). */
@@ -201,6 +227,7 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
   let entries: EntryRow[] = [];
   let weekends: WeekendRow[] = [];
   let results: ResultRow[] = [];
+  let allocations: AllocationRow[] = [];
   const slByDriver = new Map<string, number>();
   const winners = new Map<string, { name: string; slug: string | null }>();
 
@@ -214,7 +241,7 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     const { data: entriesData } = await supabase
       .from("season_entries")
       .select(
-        "driver_id, rookie, final_position, final_points, driver:drivers(id, full_name, slug), team:teams(id, name)"
+        "driver_id, rookie, final_position, final_points, driver:drivers(id, full_name, slug, nationality, date_of_birth), team:teams(id, name)"
       )
       .eq("season_id", season.id);
     entries = (entriesData ?? []) as unknown as EntryRow[];
@@ -258,6 +285,14 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     for (const s of (slData ?? []) as unknown as SLRow[]) {
       slByDriver.set(s.driver_id, Number(s.sl_points ?? 0));
     }
+
+    // Super Licence allocation table for this championship (all versions —
+    // the applicable one is picked per season year below).
+    const { data: allocationData } = await supabase
+      .from("sl_points_allocation")
+      .select("position, points, valid_from_year, valid_to_year")
+      .eq("championship_id", id);
+    allocations = (allocationData ?? []) as unknown as AllocationRow[];
   }
 
   // Race number for every session of the season (calendar order: round, then
@@ -333,6 +368,14 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
   // Championship standings: eligible (entered) drivers only, live from results.
   // Multi-team drivers get an expandable "N teams" link (career-table style);
   // their main row always shows the season totals.
+  // Age is measured at the start of the season — the scheduled season start,
+  // or the first weekend of the calendar when it is unknown.
+  const seasonStart =
+    season?.starts_on ??
+    (weekends
+      .map((w) => w.date_from)
+      .filter((d): d is string => d !== null)
+      .sort()[0] ?? null);
   const entryByDriver = new Map(entries.map((e) => [e.driver_id, e]));
   const tableRows = standings
     .map((s) => {
@@ -352,6 +395,11 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
         finalPosition: entry?.final_position ?? null,
         name: entry?.driver?.full_name ?? entry?.driver?.slug ?? s.driver_id,
         slug: entry?.driver?.slug ?? null,
+        nat: entry?.driver?.nationality ? flagEmoji(entry.driver.nationality) : "",
+        age:
+          seasonStart && entry?.driver?.date_of_birth
+            ? ageAt(entry.driver.date_of_birth, seasonStart)
+            : null,
         rookie: entry?.rookie ?? false,
         races: totalRaces,
         slPoints: slByDriver.get(s.driver_id) ?? null,
@@ -386,6 +434,8 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     position: r.finalPosition ?? i + 1,
     name: r.name,
     slug: r.slug,
+    nat: r.nat,
+    age: r.age,
     rookie: r.rookie,
     teamName: r.teamName,
     races: r.races,
@@ -396,6 +446,40 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     slPoints: r.slPoints,
     multiTeams: r.multiTeams,
   }));
+
+  // Super Licence projection for a season still in progress: the FIA awards
+  // points only once a championship is complete (v_superlicence_season has
+  // no rows until final positions are set), so until then the SL column shows,
+  // in italics, what each driver would earn if the season ended today —
+  // current standings order against the latest applicable allocation version
+  // for the season's year, the same rule as the /rankings projections.
+  const seasonDecided = entries.some((e) => e.final_position !== null);
+  let slProvisional = false;
+  if (season && !seasonDecided && standingsRows.length > 0) {
+    const latestAlloc = new Map<number, { from: number; pts: number }>();
+    for (const a of allocations) {
+      if (season.year < a.valid_from_year) continue;
+      if (a.valid_to_year !== null && season.year > a.valid_to_year) continue;
+      const cur = latestAlloc.get(a.position);
+      if (!cur || a.valid_from_year > cur.from) {
+        latestAlloc.set(a.position, {
+          from: a.valid_from_year,
+          pts: Number(a.points ?? 0),
+        });
+      }
+    }
+    if (latestAlloc.size > 0) {
+      let any = false;
+      standingsRows.slice(0, 10).forEach((r) => {
+        const alloc = latestAlloc.get(r.position ?? -1);
+        if (alloc) {
+          r.slPoints = alloc.pts;
+          any = true;
+        }
+      });
+      slProvisional = any;
+    }
+  }
 
   // Season status: a season is complete when its (scheduled) end date has
   // passed with no end date missing - drives the "Final standings" vs
@@ -427,12 +511,6 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
 
   return (
     <main style={{ maxWidth: 1100, margin: "2rem auto", padding: "0 1rem", fontFamily: "system-ui, sans-serif" }}>
-      <p style={{ fontSize: 14 }}>
-        <Link href="/" style={{ color: "#666", textDecoration: "none" }}>
-          ← Road to F1
-        </Link>
-      </p>
-
       <h1 style={{ marginBottom: 4 }}>
         <span style={{ color: championship.color ?? undefined }}>
           {championship.short_name}
@@ -490,7 +568,14 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
               the season.
             </p>
           )}
-          <StandingsTable rows={standingsRows} />
+          {slProvisional && (
+            <p style={{ margin: "0 0 12px", color: "#777", fontSize: 14 }}>
+              <em>SL points are provisional</em> — what each driver would earn
+              if the season ended now. The FIA awards Super Licence points only
+              once a championship is complete.
+            </p>
+          )}
+          <StandingsTable rows={standingsRows} slProvisional={slProvisional} />
         </section>
       )}
 
