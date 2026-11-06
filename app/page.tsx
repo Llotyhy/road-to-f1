@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-export const dynamic = "force-dynamic";
+// ISR: prerendered at deploy time and refreshed hourly (plus an immediate
+// refresh when /api/revalidate is pinged after an ingestion). The page reads
+// the current date (champion-strip completeness, the live F2 title race), so
+// the hourly cap keeps it honest while serving every visitor from the edge
+// cache instead of re-querying Supabase per request.
+export const revalidate = 3600;
 
 /** The wordmark chevrons — the five rungs of the ladder, F4 to F1, in
  *  class colours. Same geometry as the site header and the OG lockup. */
