@@ -70,26 +70,40 @@ export default function StandingsTable({
   } as const;
 
   return (
-    <table style={{ borderCollapse: "collapse", width: "100%" }}>
+    // .r2f1-tablewrap + the minWidth keep the wide standings readable on
+    // phones: the table scrolls inside this box (not the whole page) and
+    // loses its least-important columns below the breakpoints in
+    // globals.css (.r2f1-col-sm: Nat, Age / .r2f1-col-md: Races, Podiums,
+    // FL — the expanded stint rows carry the same classes so the columns
+    // stay aligned).
+    <div className="r2f1-tablewrap">
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
       <thead>
         <tr>
           <th style={th}>Pos</th>
           <th style={th}>Driver</th>
-          <th title="Nationality" style={th}>
+          <th title="Nationality" className="r2f1-col-sm" style={th}>
             Nat
           </th>
           <th
             title="Age at the start of the season"
+            className="r2f1-col-sm"
             style={{ ...th, ...num }}
           >
             Age
           </th>
           <th style={th}>Team</th>
-          <th style={{ ...th, ...num }}>Races</th>
+          <th className="r2f1-col-md" style={{ ...th, ...num }}>
+            Races
+          </th>
           <th style={{ ...th, ...num }}>Points</th>
           <th style={{ ...th, ...num }}>Wins</th>
-          <th style={{ ...th, ...num }}>Podiums</th>
-          <th style={{ ...th, ...num }}>FL</th>
+          <th className="r2f1-col-md" style={{ ...th, ...num }}>
+            Podiums
+          </th>
+          <th className="r2f1-col-md" style={{ ...th, ...num }}>
+            FL
+          </th>
           <th
             title={slProvisional ? SL_PROVISIONAL_TITLE : SL_TITLE}
             style={{ ...th, ...num }}
@@ -131,8 +145,8 @@ export default function StandingsTable({
                     </span>
                   )}
                 </td>
-                <td style={td}>{r.nat || "—"}</td>
-                <td style={{ ...td, ...num }}>{r.age ?? "—"}</td>
+                <td className="r2f1-col-sm" style={td}>{r.nat || "—"}</td>
+                <td className="r2f1-col-sm" style={{ ...td, ...num }}>{r.age ?? "—"}</td>
                 <td style={{ ...td, whiteSpace: "nowrap" }}>
                   {r.multiTeams ? (
                     <button
@@ -147,13 +161,13 @@ export default function StandingsTable({
                     r.teamName || "—"
                   )}
                 </td>
-                <td style={{ ...td, ...num }}>{r.races ?? "—"}</td>
+                <td className="r2f1-col-md" style={{ ...td, ...num }}>{r.races ?? "—"}</td>
                 <td style={{ ...td, ...num }}>
                   <strong>{r.points ?? "—"}</strong>
                 </td>
                 <td style={{ ...td, ...num }}>{r.wins ?? "—"}</td>
-                <td style={{ ...td, ...num }}>{r.podiums ?? "—"}</td>
-                <td style={{ ...td, ...num }}>{r.fastestLaps ?? "—"}</td>
+                <td className="r2f1-col-md" style={{ ...td, ...num }}>{r.podiums ?? "—"}</td>
+                <td className="r2f1-col-md" style={{ ...td, ...num }}>{r.fastestLaps ?? "—"}</td>
                 <td
                   style={{ ...td, ...num }}
                   title={slProvisional ? SL_PROVISIONAL_TITLE : "FIA Super Licence points"}
@@ -174,16 +188,16 @@ export default function StandingsTable({
                   <tr key={`${r.key}-${t.teamName}`}>
                     <td style={td} />
                     <td style={td} />
-                    <td style={td} />
-                    <td style={td} />
+                    <td className="r2f1-col-sm" style={td} />
+                    <td className="r2f1-col-sm" style={td} />
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
                       {t.teamName} ({t.raceList})
                     </td>
-                    <td style={{ ...td, ...num }}>{t.races}</td>
+                    <td className="r2f1-col-md" style={{ ...td, ...num }}>{t.races}</td>
                     <td style={{ ...td, ...num }}>{t.points}</td>
                     <td style={{ ...td, ...num }}>{t.wins}</td>
-                    <td style={{ ...td, ...num }}>{t.podiums}</td>
-                    <td style={{ ...td, ...num }}>{t.fastestLaps}</td>
+                    <td className="r2f1-col-md" style={{ ...td, ...num }}>{t.podiums}</td>
+                    <td className="r2f1-col-md" style={{ ...td, ...num }}>{t.fastestLaps}</td>
                     <td style={{ ...td, ...num }}>—</td>
                   </tr>
                 ))}
@@ -192,5 +206,6 @@ export default function StandingsTable({
         })}
       </tbody>
     </table>
+    </div>
   );
 }
