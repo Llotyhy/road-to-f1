@@ -18,6 +18,8 @@ export type StandingRow = {
   position: number | null;
   name: string;
   slug: string | null;
+  nat: string | null;
+  age: number | null;
   rookie: boolean;
   teamName: string;
   races: number | null;
@@ -30,8 +32,17 @@ export type StandingRow = {
 };
 
 const ROOKIE_TITLE = "Rookie season";
+const SL_TITLE = "FIA Super Licence points for this season";
+const SL_PROVISIONAL_TITLE =
+  "Provisional Super Licence points — what the driver would earn if the season ended now (the FIA awards points only once a championship is complete)";
 
-export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
+export default function StandingsTable({
+  rows,
+  slProvisional = false,
+}: {
+  rows: StandingRow[];
+  slProvisional?: boolean;
+}) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const th = {
@@ -64,13 +75,25 @@ export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
         <tr>
           <th style={th}>Pos</th>
           <th style={th}>Driver</th>
+          <th title="Nationality" style={th}>
+            Nat
+          </th>
+          <th
+            title="Age at the start of the season"
+            style={{ ...th, ...num }}
+          >
+            Age
+          </th>
           <th style={th}>Team</th>
           <th style={{ ...th, ...num }}>Races</th>
           <th style={{ ...th, ...num }}>Points</th>
           <th style={{ ...th, ...num }}>Wins</th>
           <th style={{ ...th, ...num }}>Podiums</th>
           <th style={{ ...th, ...num }}>FL</th>
-          <th title="FIA Super Licence points for this season" style={{ ...th, ...num }}>
+          <th
+            title={slProvisional ? SL_PROVISIONAL_TITLE : SL_TITLE}
+            style={{ ...th, ...num }}
+          >
             SL
           </th>
         </tr>
@@ -108,6 +131,8 @@ export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
                     </span>
                   )}
                 </td>
+                <td style={td}>{r.nat || "—"}</td>
+                <td style={{ ...td, ...num }}>{r.age ?? "—"}</td>
                 <td style={{ ...td, whiteSpace: "nowrap" }}>
                   {r.multiTeams ? (
                     <button
@@ -129,13 +154,26 @@ export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
                 <td style={{ ...td, ...num }}>{r.wins ?? "—"}</td>
                 <td style={{ ...td, ...num }}>{r.podiums ?? "—"}</td>
                 <td style={{ ...td, ...num }}>{r.fastestLaps ?? "—"}</td>
-                <td style={{ ...td, ...num }} title="FIA Super Licence points">
-                  {r.slPoints && r.slPoints > 0 ? r.slPoints : "—"}
+                <td
+                  style={{ ...td, ...num }}
+                  title={slProvisional ? SL_PROVISIONAL_TITLE : "FIA Super Licence points"}
+                >
+                  {r.slPoints && r.slPoints > 0 ? (
+                    slProvisional ? (
+                      <em>{r.slPoints}</em>
+                    ) : (
+                      r.slPoints
+                    )
+                  ) : (
+                    "—"
+                  )}
                 </td>
               </tr>
               {r.multiTeams && isOpen &&
                 r.multiTeams.map((t) => (
                   <tr key={`${r.key}-${t.teamName}`}>
+                    <td style={td} />
+                    <td style={td} />
                     <td style={td} />
                     <td style={td} />
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
@@ -156,4 +194,3 @@ export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
     </table>
   );
 }
-
