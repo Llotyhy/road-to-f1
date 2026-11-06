@@ -9,6 +9,9 @@ const SITE_DESCRIPTION =
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
+  // The browser tab reads "Road to F1" on EVERY page: pages must not set
+  // metadata.title (it would override this); per-page names belong in
+  // openGraph.title, which only affects link previews, not the tab.
   title: "Road to F1",
   description: SITE_DESCRIPTION,
   openGraph: {
