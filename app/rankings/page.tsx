@@ -30,6 +30,34 @@ type DriverRow = {
   nationality: string | null;
 };
 
+type SeasonRow = {
+  id: string;
+  championship_id: string;
+};
+
+type SeasonEntryRow = {
+  season_id: string;
+  final_position: number | null;
+};
+
+type StandingsRow = {
+  season_id: string;
+  championship_id: string;
+  short_name: string;
+  driver_id: string;
+  points: number | null;
+  wins: number | null;
+  podiums: number | null;
+};
+
+type AllocationRow = {
+  championship_id: string;
+  position: number;
+  points: number | string;
+  valid_from_year: number;
+  valid_to_year: number | null;
+};
+
 /** Compute the flag emoji from an ISO 3166-1 alpha-2 code. */
 function flagEmoji(code: string): string {
   if (!/^[A-Z]{2}$/.test(code)) return "";
@@ -42,13 +70,11 @@ function flagEmoji(code: string): string {
 const PLANNED = [
   {
     title: "Career ladder index",
-    body:
-      "Every driver's climb in one number: how fast they moved from national F4 to the edge of the grid, weighted by championships, wins and consistency.",
+    body: "Every driver's climb in one number: how fast they moved from national F4 to the edge of the grid, weighted by championships, wins and consistency.",
   },
   {
     title: "All-time winners",
-    body:
-      "Most wins, podiums and titles across every series the site covers — from the F2 record books to the F4 charts.",
+    body: "Most wins, podiums and titles across every series the site covers — from the F2 record books to the F4 charts.",
   },
 ];
 
@@ -114,6 +140,8 @@ export default async function RankingsPage() {
     driverId: string;
     perYear: Record<number, number>;
     total: number;
+    projected: number;
+    projected26: number;
   };
   const entries: Entry[] = [];
   for (const [driverId, byYear] of pointsByDriverYear) {
@@ -125,12 +153,166 @@ export default async function RankingsPage() {
       perYear[year] = counted;
       total += counted;
     }
-    if (total > 0) entries.push({ driverId, perYear, total });
+    if (total > 0) {
+      entries.push({ driverId, perYear, total, projected: total, projected26: 0 });
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // PROJECTIONS — what the total would be if every in-progress current-year
+  // championship ended at today's standings. The FIA only awards points once
+  // a championship is complete, so this is an estimate shown in its own
+  // column. A season is "in progress" when none of its season_entries have a
+  // final position yet (F2 2026 until the Yas Marina finale, Spanish F4
+  // until its last round) — decided seasons are excluded automatically, so
+  // the column fills and empties itself as seasons end.
+  // ───────────────────────────────────────────────────────────────────────
+  const projectedLists = new Map<string, number[]>();
+  const inProgressShortNames: string[] = [];
+  let projectionsBroken = false;
+
+  if (!loadError) {
+    const { data: seasonsData } = await supabase
+      .from("seasons")
+      .select("id, championship_id")
+      .eq("year", currentYear);
+    const seasons = (seasonsData ?? []) as unknown as SeasonRow[];
+    const seasonIds = seasons.map((s) => s.id);
+
+    const decidedSeasonIds = new Set<string>();
+    if (seasonIds.length > 0) {
+      let sStart = 0;
+      while (true) {
+        const { data: entriesData } = await supabase
+          .from("season_entries")
+          .select("season_id, final_position")
+          .in("season_id", seasonIds)
+          .range(sStart, sStart + 999);
+        const page = (entriesData ?? []) as unknown as SeasonEntryRow[];
+        for (const row of page) {
+          if (row.final_position !== null) decidedSeasonIds.add(row.season_id);
+        }
+        if (page.length < 1000) break;
+        sStart += 1000;
+      }
+    }
+    const inProgressIds = seasonIds.filter((id) => !decidedSeasonIds.has(id));
+
+    if (inProgressIds.length > 0) {
+      const { data: standingsData } = await supabase
+        .from("v_championship_standings")
+        .select("season_id, championship_id, short_name, driver_id, points, wins, podiums")
+        .in("season_id", inProgressIds);
+      const standings = (standingsData ?? []) as unknown as StandingsRow[];
+
+      const bySeason = new Map<string, StandingsRow[]>();
+      for (const r of standings) {
+        const list = bySeason.get(r.season_id);
+        if (list) list.push(r);
+        else bySeason.set(r.season_id, [r]);
+      }
+
+      // Latest FIA allocation version applicable to the current year, per
+      // championship and position (mirrors the view's ORDER BY valid_from_year
+      // DESC LIMIT 1 — later versions simply win).
+      const champIds = Array.from(
+        new Set(
+          seasons
+            .filter((s) => inProgressIds.indexOf(s.id) !== -1)
+            .map((s) => s.championship_id)
+        )
+      );
+      const allocByChamp = new Map<string, Map<number, number>>();
+      if (champIds.length > 0) {
+        const { data: allocData } = await supabase
+          .from("sl_points_allocation")
+          .select("championship_id, position, points, valid_from_year, valid_to_year")
+          .in("championship_id", champIds);
+        const versions = new Map<string, Map<number, { from: number; pts: number }>>();
+        for (const a of (allocData ?? []) as unknown as AllocationRow[]) {
+          const from = Number(a.valid_from_year);
+          const to = a.valid_to_year === null ? 9999 : Number(a.valid_to_year);
+          if (currentYear < from || currentYear > to) continue;
+          let m = versions.get(a.championship_id);
+          if (!m) {
+            m = new Map();
+            versions.set(a.championship_id, m);
+          }
+          const pos = Number(a.position);
+          const existing = m.get(pos);
+          if (existing === undefined || from > existing.from) {
+            m.set(pos, { from, pts: Number(a.points) });
+          }
+        }
+        for (const [champ, m] of versions) {
+          const flat = new Map<number, number>();
+          for (const [pos, v] of m) flat.set(pos, v.pts);
+          allocByChamp.set(champ, flat);
+        }
+      }
+
+      // Rank each in-progress season at its current standings (the site's
+      // sort: points, wins, podiums) and award allocation points for P1-P10.
+      for (const [seasonId, rows] of bySeason) {
+        const champId = seasons.find((s) => s.id === seasonId)?.championship_id;
+        if (!champId) continue;
+        const alloc = allocByChamp.get(champId);
+        if (!alloc) {
+          projectionsBroken = true;
+          continue;
+        }
+        const short = rows[0]?.short_name ?? champId;
+        if (inProgressShortNames.indexOf(short) === -1) inProgressShortNames.push(short);
+        const sorted = [...rows].sort(
+          (a, b) =>
+            Number(b.points ?? 0) - Number(a.points ?? 0) ||
+            Number(b.wins ?? 0) - Number(a.wins ?? 0) ||
+            Number(b.podiums ?? 0) - Number(a.podiums ?? 0)
+        );
+        sorted.forEach((r, idx) => {
+          const pos = idx + 1;
+          if (pos > 10) return;
+          const pts = alloc.get(pos) ?? 0;
+          if (pts <= 0) return;
+          const list = projectedLists.get(r.driver_id);
+          if (list) list.push(pts);
+          else projectedLists.set(r.driver_id, [pts]);
+        });
+      }
+    }
+  }
+
+  const hasProjections = projectedLists.size > 0;
+
+  // Merge projections into the entries: the projected current-year score is
+  // the best two of (official current-year points + projected points), and
+  // the projected total replaces the counted current-year column in the sum.
+  for (const e of entries) {
+    const list = projectedLists.get(e.driverId);
+    if (!list) continue;
+    const merged = [
+      ...(pointsByDriverYear.get(e.driverId)?.get(currentYear) ?? []),
+      ...list,
+    ].sort((a, b) => b - a);
+    e.projected26 = merged.slice(0, 2).reduce((a, b) => a + b, 0);
+    e.projected =
+      e.perYear[windowYears[0]] + e.perYear[windowYears[1]] + e.projected26;
+  }
+
+  // Drivers whose only window relevance is a projection (e.g. an F2 rookie
+  // leading the current season) still belong on the board.
+  for (const [driverId, list] of projectedLists) {
+    if (pointsByDriverYear.has(driverId)) continue;
+    const projected26 = [...list].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
+    if (projected26 <= 0) continue;
+    const perYear: Record<number, number> = {};
+    for (const y of windowYears) perYear[y] = 0;
+    entries.push({ driverId, perYear, total: 0, projected: projected26, projected26 });
   }
 
   // Driver details for the names and links (batched .in lookups).
   const drivers = new Map<string, DriverRow>();
-  const driverIds = Array.from(entries.map((e) => e.driverId));
+  const driverIds = entries.map((e) => e.driverId);
   for (let i = 0; i < driverIds.length; i += 100) {
     const { data } = await supabase
       .from("drivers")
@@ -239,7 +421,7 @@ export default async function RankingsPage() {
           </p>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: hasProjections ? 620 : 560 }}>
               <thead>
                 <tr>
                   <th style={numTh}>#</th>
@@ -248,12 +430,14 @@ export default async function RankingsPage() {
                     <th key={y} style={numTh}>{y}</th>
                   ))}
                   <th style={numTh}>Total</th>
+                  {hasProjections && <th style={numTh}>Projected</th>}
                   <th style={numTh}>To 40</th>
                 </tr>
               </thead>
               <tbody>
                 {named.map((e, i) => {
                   const secured = e.total >= 40;
+                  const projectedUp = e.projected > e.total;
                   return (
                     <tr key={e.driverId}>
                       <td style={{ ...numTd, color: "#64748b" }}>{positions[i]}</td>
@@ -278,8 +462,23 @@ export default async function RankingsPage() {
                           color: secured ? "#f97316" : "var(--text)",
                         }}
                       >
-                        {e.total}
+                        {e.total > 0 ? e.total : "—"}
                       </td>
+                      {hasProjections && (
+                        <td
+                          style={{
+                            ...numTd,
+                            fontWeight: 700,
+                            color: projectedUp
+                              ? e.projected >= 40
+                                ? "#f97316"
+                                : "var(--text)"
+                              : "#334155",
+                          }}
+                        >
+                          {projectedUp ? e.projected : "—"}
+                        </td>
+                      )}
                       <td style={{ ...numTd, color: secured ? "#f97316" : "#64748b" }}>
                         {secured ? "✓" : `−${40 - e.total}`}
                       </td>
@@ -294,9 +493,16 @@ export default async function RankingsPage() {
         <p style={{ color: "#64748b", fontSize: 12.5, lineHeight: 1.7, margin: "16px 0 0" }}>
           {named.length} driver{named.length === 1 ? "" : "s"} on the board. Per FIA
           rules, at most two championships count per year; points from external
-          series (IndyCar, Formula E, Super Formula, WEC) are included. Eligibility
-          also requires age, mileage and FIA approval — this table shows points
-          earned. The {currentYear} column updates live as each season ends.
+          series are included. Eligibility also requires age, mileage and FIA
+          approval — this table shows points earned. The {currentYear} column
+          updates live as each season ends
+          {hasProjections
+            ? `. Projected: what the total would be if every in-progress ${currentYear} championship (${inProgressShortNames.join(", ")}) ended at today's standings — the FIA only awards points once a championship is complete, so it is an estimate`
+            : ""}
+          {projectionsBroken
+            ? ". One in-progress championship has no Super Licence allocation yet and is not projected"
+            : ""}
+          .
         </p>
       </section>
 
