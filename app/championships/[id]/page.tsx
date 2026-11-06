@@ -110,16 +110,36 @@ function ageAt(dob: string, on: string): number {
   return age;
 }
 
-/** Browser-tab names for the championships (the URL id alone reads poorly). */
+/** Readable names for the championships, used for the og link previews
+ *  (the class-page h1 shows the DB name; the URL id alone reads poorly).
+ *  The browser tab itself is always "Road to F1" via the root layout.
+ *  All 25 championships are mapped — the id-split fallback never fires. */
 const CHAMPIONSHIP_TITLES: Record<string, string> = {
   f2: "F2",
   f3: "F3",
   freca: "FREC",
+  frme: "FRME",
+  "fr-americas": "FR Americas",
+  "fr-oceania": "FR Oceania",
   "italian-f4": "Italian F4",
-  indycar: "IndyCar",
-  "formula-e": "Formula E",
+  "f4-british": "British F4",
+  "f4-spanish": "Spanish F4",
+  "f4-french": "French F4",
+  "f4-uae": "F4 UAE",
+  "f4-us": "US F4",
   "super-formula": "Super Formula",
+  "macau-gp": "Macau GP",
+  "formula-renault-eurocup": "Formula Renault Eurocup",
+  "toyota-racing-series": "Toyota Racing Series",
+  "german-f4": "German F4",
+  indycar: "IndyCar",
+  "indy-nxt": "Indy NXT",
+  imsa: "IMSA",
+  "nascar-cup": "NASCAR Cup",
+  "formula-e": "Formula E",
+  "gt-world-challenge-europe": "GT World Challenge Europe",
   "wec-hypercar": "WEC Hypercar",
+  "wec-lmgt3": "WEC LMGT3",
 };
 
 function championshipTitle(id: string): string {
