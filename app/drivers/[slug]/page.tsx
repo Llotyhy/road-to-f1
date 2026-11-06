@@ -481,9 +481,23 @@ export default async function DriverPage({ params }: PageProps) {
   // seasons plus the current one) and the career total.
   const currentYear = new Date().getUTCFullYear();
   const windowFrom = currentYear - 2;
-  const slWindowPts = slRows
-    .filter((s) => s.year >= windowFrom && s.year <= currentYear)
-    .reduce((a, s) => a + Number(s.sl_points ?? 0), 0);
+  // Counted window points: per calendar year, at most two championships
+  // count (the two best results) — the same FIA approximation as the
+  // v_superlicence views and the /rankings page, so the two can never
+  // disagree.
+  const slPerYear = new Map<number, number[]>();
+  for (const s of slRows) {
+    if (s.year >= windowFrom && s.year <= currentYear) {
+      const pts = Number(s.sl_points ?? 0);
+      const list = slPerYear.get(s.year);
+      if (list) list.push(pts);
+      else slPerYear.set(s.year, [pts]);
+    }
+  }
+  let slWindowPts = 0;
+  for (const list of slPerYear.values()) {
+    slWindowPts += list.sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
+  }
   const slCareerPts = slRows.reduce((a, s) => a + Number(s.sl_points ?? 0), 0);
 
   // Hero colour: the driver's current (or most recent) academy.
