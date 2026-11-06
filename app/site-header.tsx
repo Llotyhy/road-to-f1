@@ -36,7 +36,7 @@ function WordmarkChevrons({ size = 13 }: { size?: number }) {
 const NAV = [
   { href: "/championships", label: "Championships" },
   { href: "/drivers", label: "Drivers" },
-  { href: "/academies", label: "Academies", accent: "#f97316" },
+  { href: "/academies", label: "Academies" },
   { href: "/rankings", label: "Rankings" },
 ];
 
@@ -90,12 +90,7 @@ export default function SiteHeader() {
             <Link
               key={n.href}
               href={n.href}
-              style={{
-                fontSize: 14,
-                textDecoration: "none",
-                color: n.accent ?? "#94a3b8",
-                fontWeight: n.accent ? 600 : 400,
-              }}
+              style={{ fontSize: 14, textDecoration: "none", color: "#94a3b8", fontWeight: 400 }}
             >
               {n.label}
             </Link>
