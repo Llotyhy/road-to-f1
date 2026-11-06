@@ -370,6 +370,11 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
   // their main row always shows the season totals.
   // Age is measured at the start of the season — the scheduled season start,
   // or the first weekend of the calendar when it is unknown.
+  // SORT: the officials' final positions lead (they encode the tiebreaks,
+  // e.g. a 37-37 title tie, and the décompte drops, so they are always the
+  // authoritative order for a decided season); everything without one
+  // (in-progress seasons, unranked guests) follows, ordered by the live
+  // points, wins, podiums computation.
   const seasonStart =
     season?.starts_on ??
     (weekends
@@ -423,10 +428,10 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
     })
     .sort(
       (a, b) =>
+        (a.finalPosition ?? 1e9) - (b.finalPosition ?? 1e9) ||
         b.points - a.points ||
         b.wins - a.wins ||
-        b.podiums - a.podiums ||
-        (a.finalPosition ?? 999) - (b.finalPosition ?? 999)
+        b.podiums - a.podiums
     );
 
   const standingsRows: StandingRow[] = tableRows.map((r, i) => ({
