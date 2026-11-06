@@ -110,19 +110,33 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
   } as const;
 
   return (
-    <table style={{ borderCollapse: "collapse", width: "100%" }}>
+    // .r2f1-tablewrap + the minWidth keep the wide career table readable on
+    // phones (scrolls inside this box, not the page) and the breakpoint
+    // classes drop its least-important columns below the sizes in
+    // globals.css (.r2f1-col-sm: Age / .r2f1-col-md: Races, Podiums, FL —
+    // the expanded stint rows carry the same classes to stay aligned).
+    <div className="r2f1-tablewrap">
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
       <thead>
         <tr>
           <th style={th}>Year</th>
-          <th style={th}>Age</th>
+          <th className="r2f1-col-sm" style={th}>
+            Age
+          </th>
           <th style={th}>Championship</th>
           <th style={th}>Team</th>
           <th style={{ ...th, ...num }}>Pos</th>
-          <th style={{ ...th, ...num }}>Races</th>
+          <th className="r2f1-col-md" style={{ ...th, ...num }}>
+            Races
+          </th>
           <th style={{ ...th, ...num }}>Points</th>
           <th style={{ ...th, ...num }}>Wins</th>
-          <th style={{ ...th, ...num }}>Podiums</th>
-          <th style={{ ...th, ...num }}>FL</th>
+          <th className="r2f1-col-md" style={{ ...th, ...num }}>
+            Podiums
+          </th>
+          <th className="r2f1-col-md" style={{ ...th, ...num }}>
+            FL
+          </th>
           <th title="FIA Super Licence points for this season" style={{ ...th, ...num }}>
             SL
           </th>
@@ -136,7 +150,7 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
             <Fragment key={r.key}>
               <tr>
                 <td style={td}>{r.year}</td>
-                <td style={{ ...td, color: "#94a3b8" }}>{r.age ?? "—"}</td>
+                <td className="r2f1-col-sm" style={{ ...td, color: "#94a3b8" }}>{r.age ?? "—"}</td>
                 <td style={td}>
                   <Link href={`/championships/${r.championshipId}?year=${r.year}`} style={link}>
                     {r.shortName}
@@ -166,11 +180,11 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
                     "—"
                   )}
                 </td>
-                <td style={{ ...td, ...num }}>{r.races ?? "—"}</td>
+                <td className="r2f1-col-md" style={{ ...td, ...num }}>{r.races ?? "—"}</td>
                 <td style={{ ...td, ...num }}>{r.points ?? "—"}</td>
                 <td style={{ ...td, ...num }}>{r.wins ?? "—"}</td>
-                <td style={{ ...td, ...num }}>{r.podiums ?? "—"}</td>
-                <td style={{ ...td, ...num }}>{r.fastestLaps ?? "—"}</td>
+                <td className="r2f1-col-md" style={{ ...td, ...num }}>{r.podiums ?? "—"}</td>
+                <td className="r2f1-col-md" style={{ ...td, ...num }}>{r.fastestLaps ?? "—"}</td>
                 <td style={{ ...td, ...num }} title="FIA Super Licence points">
                   {r.slPoints && r.slPoints > 0 ? r.slPoints : "—"}
                 </td>
@@ -179,17 +193,17 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
                 r.multiTeams.map((t) => (
                   <tr key={`${r.key}-${t.teamName}`}>
                     <td style={td} />
-                    <td style={td} />
+                    <td className="r2f1-col-sm" style={td} />
                     <td style={td} />
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
                       {t.teamName} ({t.raceList})
                     </td>
                     <td style={{ ...td, ...num }}>—</td>
-                    <td style={{ ...td, ...num }}>{t.races}</td>
+                    <td className="r2f1-col-md" style={{ ...td, ...num }}>{t.races}</td>
                     <td style={{ ...td, ...num }}>{t.points}</td>
                     <td style={{ ...td, ...num }}>{t.wins}</td>
-                    <td style={{ ...td, ...num }}>{t.podiums}</td>
-                    <td style={{ ...td, ...num }}>{t.fastestLaps}</td>
+                    <td className="r2f1-col-md" style={{ ...td, ...num }}>{t.podiums}</td>
+                    <td className="r2f1-col-md" style={{ ...td, ...num }}>{t.fastestLaps}</td>
                     <td style={{ ...td, ...num }}>—</td>
                   </tr>
                 ))}
@@ -198,5 +212,6 @@ export default function CareerTable({ rows }: { rows: CareerRow[] }) {
         })}
       </tbody>
     </table>
+    </div>
   );
 }
