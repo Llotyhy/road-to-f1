@@ -683,7 +683,10 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
       {weekends.length > 0 && (
         <section aria-label="Race calendar" style={{ marginTop: "2.5rem" }}>
           <h2 style={{ fontSize: 20, marginBottom: 8 }}>Calendar</h2>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          {/* .r2f1-tablewrap: the calendar scrolls inside this box on
+              phones instead of dragging the page sideways. */}
+          <div className="r2f1-tablewrap">
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
             <thead>
               <tr>
                 <th style={th}>Rd</th>
@@ -747,6 +750,7 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
     </main>
