@@ -6,7 +6,6 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Championships",
   description:
     "Every championship covered by Road to F1: the ladder from F4 to F2, the former series that ran their final seasons, and the GT, sportscar and oval championships beyond the ladder.",
   openGraph: {
