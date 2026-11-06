@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-export const dynamic = "force-dynamic";
+// ISR: prerendered at deploy time and refreshed hourly (plus an immediate
+// refresh when /api/revalidate is pinged after an ingestion). The Super
+// Licence table only changes when a season SQL runs, so caching is safe.
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   description:
