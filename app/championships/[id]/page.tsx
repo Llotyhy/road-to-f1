@@ -657,9 +657,18 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
           )}
           {entries.some((e) => e.final_points !== null) && (
             <p style={{ margin: "0 0 12px", color: "#777", fontSize: 14 }}>
-              Points are the officials&rsquo; final totals — the{" "}
-              <em>décompte</em> drops each driver&rsquo;s worst meeting of
-              the season.
+              Points are the officials&rsquo; final totals —{" "}
+              {id === "super-formula" ? (
+                <>
+                  the championship counts each driver&rsquo;s five best
+                  of the season&rsquo;s races (the 2020 rule).
+                </>
+              ) : (
+                <>
+                  the <em>décompte</em> drops each driver&rsquo;s worst
+                  meeting of the season.
+                </>
+              )}
             </p>
           )}
           {slProvisional && (
