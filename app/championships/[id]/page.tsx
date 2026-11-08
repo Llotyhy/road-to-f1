@@ -588,6 +588,23 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
       .map((w) => w.round)
   ).size;
 
+  // Décompte footnote: only the seasons whose officials actually applied a
+  // drop rule carry the note — French F4 2019-2021 (each driver's worst
+  // meeting dropped) and Super Formula's COVID 2020 (five best of the
+  // season's races). The later Super Formula seasons also store
+  // final_points (raw = final, no drop rule), so keying the note on the
+  // championship alone showed the 2020 wording on seasons that never
+  // dropped anything — key it on (championship, year) instead.
+  const sfCovid2020 = id === "super-formula" && season?.year === 2020;
+  const frF4Decompte =
+    id === "f4-french" &&
+    season !== null &&
+    season.year >= 2019 &&
+    season.year <= 2021;
+  const showDropRuleNote =
+    entries.some((e) => e.final_points !== null) &&
+    (sfCovid2020 || frF4Decompte);
+
   const th = {
     textAlign: "left" as const,
     padding: "8px 10px",
@@ -655,13 +672,13 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
               After {roundsDone}/{totalRounds} rounds
             </p>
           )}
-          {entries.some((e) => e.final_points !== null) && (
+          {showDropRuleNote && (
             <p style={{ margin: "0 0 12px", color: "#777", fontSize: 14 }}>
               Points are the officials&rsquo; final totals —{" "}
-              {id === "super-formula" ? (
+              {sfCovid2020 ? (
                 <>
                   the championship counts each driver&rsquo;s five best
-                  of the season&rsquo;s races (the 2020 rule).
+                  of the season&rsquo;s races.
                 </>
               ) : (
                 <>
