@@ -120,6 +120,7 @@ function ageAt(dob: string, on: string): number {
  *  All 25 championships are mapped — the id-split fallback never fires. */
 const CHAMPIONSHIP_TITLES: Record<string, string> = {
   f2: "F2",
+  gp2: "GP2",
   f3: "F3",
   freca: "FREC",
   frme: "FRME",
@@ -144,6 +145,13 @@ const CHAMPIONSHIP_TITLES: Record<string, string> = {
   "gt-world-challenge-europe": "GT World Challenge Europe",
   "wec-hypercar": "WEC Hypercar",
   "wec-lmgt3": "WEC LMGT3",
+};
+
+/** Lineage note shown under the class-page header: championships that are
+ *  the same series continued under a different name (GP2 -> FIA Formula 2). */
+const LINEAGE: Record<string, { label: string; href: string }> = {
+  f2: { label: "Preceded by GP2 Series · 2005\u20132016", href: "/championships/gp2" },
+  gp2: { label: "Succeeded by FIA Formula 2 · from 2017", href: "/championships/f2" },
 };
 
 function championshipTitle(id: string): string {
@@ -632,6 +640,15 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
         {championship.name}
         {season ? ` · ${fmtRange(season.starts_on, season.ends_on)}` : ""}
       </p>
+
+      {/* Series lineage (same series, continued under a new name) */}
+      {LINEAGE[id] && (
+        <p style={{ marginTop: 2, fontSize: 14 }}>
+          <Link href={LINEAGE[id].href} style={link}>
+            {LINEAGE[id].label}
+          </Link>
+        </p>
+      )}
 
       {/* Season switcher */}
       {seasons.length > 0 && (
