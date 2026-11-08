@@ -152,6 +152,7 @@ const LADDER_TIERS: { label: string; accent: string; items: LadderItem[] }[] = [
 const HIDDEN_FROM_INDEX = ["macau-gp"];
 
 const FORMER_ORDER = [
+  "gp2",
   "german-f4",
   "toyota-racing-series",
   "formula-renault-eurocup",
