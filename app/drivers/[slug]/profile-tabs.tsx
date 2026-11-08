@@ -23,6 +23,8 @@ export type ProfileData = {
     windowTo: number;
     /** career total, can be higher than the window */
     careerPts: number;
+    /** F1 free-practice bonus points inside the window (on top of the rows above) */
+    fp1Bonus: number;
   };
 };
 
@@ -350,7 +352,7 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
                   }}
                 />
               </div>
-              {slWindowRows.length > 0 && (
+              {(slWindowRows.length > 0 || sl.fp1Bonus > 0) && (
                 <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
                   {slWindowRows.map((r) => (
                     <div key={r.key} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: MUTED }}>
@@ -363,7 +365,20 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
                       </span>
                     </div>
                   ))}
+                  {sl.fp1Bonus > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: MUTED }}>
+                      <span>F1 free practice</span>
+                      <span style={{ color: TEXT, fontWeight: 700 }}>+{sl.fp1Bonus}</span>
+                    </div>
+                  )}
                 </div>
+              )}
+              {sl.fp1Bonus > 0 && (
+                <p style={{ color: DIM, fontSize: 12, margin: "12px 0 0", lineHeight: 1.5 }}>
+                  Includes +{sl.fp1Bonus} bonus point{sl.fp1Bonus === 1 ? "" : "s"} from Formula 1 free
+                  practice — one per session with 100 km completed, capped at 10 per season, on top
+                  of championship points (FIA Appendix L).
+                </p>
               )}
               {sl.careerPts > sl.windowPts && (
                 <p style={{ color: DIM, fontSize: 12, margin: "12px 0 0", lineHeight: 1.5 }}>
