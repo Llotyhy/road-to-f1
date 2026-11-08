@@ -83,6 +83,11 @@ type SLRow = {
   sl_points: number | string;
 };
 
+type BonusRow = {
+  year: number;
+  points: number | string;
+};
+
 type Team = { id: string; name: string };
 
 type Championship = { id: string; name: string };
@@ -217,10 +222,10 @@ export default async function DriverPage({ params }: PageProps) {
   const driver = driverData as unknown as Driver | null;
   if (!driver) notFound();
 
-  // Career, academy memberships, per-race results and Super Licence rows
-  // all hang off the driver id alone: fetched in ONE parallel batch instead
-  // of four sequential round-trips.
-  const [careerRes, membershipRes, resultsRes, slRes] = await Promise.all([
+  // Career, academy memberships, per-race results, Super Licence rows and
+  // discretionary bonus points all hang off the driver id alone: fetched in
+  // ONE parallel batch instead of five sequential round-trips.
+  const [careerRes, membershipRes, resultsRes, slRes, bonusRes] = await Promise.all([
     supabase
       .from("v_driver_career")
       .select("year, championship_id, short_name, team_id, rookie, final_position")
@@ -237,6 +242,11 @@ export default async function DriverPage({ params }: PageProps) {
       .from("v_superlicence_season")
       .select("championship_id, year, sl_points")
       .eq("driver_id", driver.id),
+    supabase
+      .from("sl_bonus_points")
+      .select("year, points")
+      .eq("driver_id", driver.id)
+      .eq("category", "f1_free_practice"),
   ]);
   const career = ((careerRes.data ?? []) as unknown as CareerViewRow[]).slice().sort(
     (a, b) => a.year - b.year || a.championship_id.localeCompare(b.championship_id)
@@ -251,6 +261,7 @@ export default async function DriverPage({ params }: PageProps) {
     });
   const results = (resultsRes.data ?? []) as unknown as ResultRow[];
   const slRows = (slRes.data ?? []) as unknown as SLRow[];
+  const bonusRows = (bonusRes.data ?? []) as unknown as BonusRow[];
 
   // Seasons for every championship this driver ever entered, plus the full
   // championship names (title badges, silverware tab) — both keyed on the
@@ -560,6 +571,18 @@ export default async function DriverPage({ params }: PageProps) {
   for (const list of slPerYear.values()) {
     slWindowPts += list.sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
   }
+  // F1 free-practice bonus points inside the window: one point per FP1
+  // session with 100+ km completed, capped at 10 per season, awarded on top
+  // of the two best championships per year (FIA Appendix L). Same source
+  // table as /rankings, so the two pages can never disagree.
+  const fp1ByYear = new Map<number, number>();
+  for (const b of bonusRows) {
+    if (b.year >= windowFrom && b.year <= currentYear) {
+      fp1ByYear.set(b.year, Math.min(10, (fp1ByYear.get(b.year) ?? 0) + Number(b.points ?? 0)));
+    }
+  }
+  const slFp1Bonus = Array.from(fp1ByYear.values()).reduce((a, b) => a + b, 0);
+  slWindowPts += slFp1Bonus;
   const slCareerPts = slRows.reduce((a, s) => a + Number(s.sl_points ?? 0), 0);
 
   // Hero colour: the driver's current (or most recent) academy.
@@ -741,6 +764,7 @@ export default async function DriverPage({ params }: PageProps) {
               windowFrom,
               windowTo: currentYear,
               careerPts: slCareerPts,
+              fp1Bonus: slFp1Bonus,
             },
           }}
         />
