@@ -60,6 +60,12 @@ type AllocationRow = {
   valid_to_year: number | null;
 };
 
+type BonusRow = {
+  driver_id: string;
+  year: number;
+  points: number | string;
+};
+
 /** Compute the flag emoji from an ISO 3166-1 alpha-2 code. */
 function flagEmoji(code: string): string {
   if (!/^[A-Z]{2}$/.test(code)) return "";
@@ -121,6 +127,30 @@ export default async function RankingsPage() {
     start += 1000;
   }
 
+  // F1 free-practice bonus points for the window (FIA Appendix L: one point
+  // per FP1 session with 100+ km completed, up to 10 per season, awarded on
+  // top of the two best championships per year). Same sl_bonus_points source
+  // as the driver profiles, so the two pages can never disagree.
+  const fp1ByDriverYear = new Map<string, Map<number, number>>();
+  if (!loadError) {
+    const { data: bonusData } = await supabase
+      .from("sl_bonus_points")
+      .select("driver_id, year, points")
+      .eq("category", "f1_free_practice")
+      .in("year", windowYears);
+    for (const r of (bonusData ?? []) as unknown as BonusRow[]) {
+      let byYear = fp1ByDriverYear.get(r.driver_id);
+      if (!byYear) {
+        byYear = new Map();
+        fp1ByDriverYear.set(r.driver_id, byYear);
+      }
+      // Cap at 10 per season (the FIA rule) in case of overlapping rows.
+      byYear.set(r.year, Math.min(10, (byYear.get(r.year) ?? 0) + Number(r.points ?? 0)));
+    }
+  }
+  const fp1For = (driverId: string, year: number): number =>
+    fp1ByDriverYear.get(driverId)?.get(year) ?? 0;
+
   // Per driver and year, the counted Super Licence points. FIA rule as the
   // database models it: at most two championships count per calendar year
   // (the two best results), so a driver contesting three series in one
@@ -152,12 +182,29 @@ export default async function RankingsPage() {
     for (const year of windowYears) {
       const list = (byYear.get(year) ?? []).sort((a, b) => b - a);
       const counted = list.slice(0, 2).reduce((a, b) => a + b, 0);
-      perYear[year] = counted;
-      total += counted;
+      // Practice bonuses are official points, so they fold into the year
+      // columns and the total (the footnote spells this out).
+      perYear[year] = counted + fp1For(driverId, year);
+      total += perYear[year];
     }
     if (total > 0) {
       entries.push({ driverId, perYear, total, projected: total, projected26: 0 });
     }
+  }
+
+  // Drivers whose only window points are F1 free-practice bonuses (e.g. a
+  // race driver whose junior championships all fall outside the window)
+  // still belong on the board.
+  for (const [driverId, byYear] of fp1ByDriverYear) {
+    if (pointsByDriverYear.has(driverId)) continue;
+    const perYear: Record<number, number> = {};
+    let total = 0;
+    for (const y of windowYears) {
+      perYear[y] = byYear.get(y) ?? 0;
+      total += perYear[y];
+    }
+    if (total <= 0) continue;
+    entries.push({ driverId, perYear, total, projected: total, projected26: 0 });
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -289,6 +336,8 @@ export default async function RankingsPage() {
   // Merge projections into the entries: the projected current-year score is
   // the best two of (official current-year points + projected points), and
   // the projected total replaces the counted current-year column in the sum.
+  // The current-year F1 practice bonus is official, not projected, so it
+  // rides along in the projected total too.
   for (const e of entries) {
     const list = projectedLists.get(e.driverId);
     if (!list) continue;
@@ -298,13 +347,17 @@ export default async function RankingsPage() {
     ].sort((a, b) => b - a);
     e.projected26 = merged.slice(0, 2).reduce((a, b) => a + b, 0);
     e.projected =
-      e.perYear[windowYears[0]] + e.perYear[windowYears[1]] + e.projected26;
+      e.perYear[windowYears[0]] +
+      e.perYear[windowYears[1]] +
+      e.projected26 +
+      fp1For(e.driverId, currentYear);
   }
 
   // Drivers whose only window relevance is a projection (e.g. an F2 rookie
-  // leading the current season) still belong on the board.
+  // leading the current season) still belong on the board. Drivers already
+  // on the board through championships or practice bonuses were merged above.
   for (const [driverId, list] of projectedLists) {
-    if (pointsByDriverYear.has(driverId)) continue;
+    if (pointsByDriverYear.has(driverId) || fp1ByDriverYear.has(driverId)) continue;
     const projected26 = [...list].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
     if (projected26 <= 0) continue;
     const perYear: Record<number, number> = {};
@@ -495,7 +548,10 @@ export default async function RankingsPage() {
         <p style={{ color: "#64748b", fontSize: 12.5, lineHeight: 1.7, margin: "16px 0 0" }}>
           {named.length} driver{named.length === 1 ? "" : "s"} on the board. Per FIA
           rules, at most two championships count per year; points from external
-          series are included. Eligibility also requires age, mileage and FIA
+          series are included, and so are F1 free-practice bonus points — one
+          point per practice session with 100 km completed, up to 10 per
+          season, on top of the two championships (already folded into the
+          year columns). Eligibility also requires age, mileage and FIA
           approval — this table shows points earned. The {currentYear} column
           updates live as each season ends
           {hasProjections
