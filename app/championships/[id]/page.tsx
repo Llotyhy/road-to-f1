@@ -479,7 +479,27 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
       .filter((d): d is string => d !== null)
       .sort()[0] ?? null);
   const entryByDriver = new Map(entries.map((e) => [e.driver_id, e]));
-  const tableRows = standings
+  // Standings rows come from the results-driven v_championship_standings
+  // view, so an entered driver with no result rows yet (a standby who has
+  // not turned a wheel — SF 2026's Tokiya Suzuki was the first) drops out
+  // of the table even though their season_entries row exists. Once the
+  // season has any results at all, append those entrants with coalesced
+  // zero counts and their entered team, so the table matches the entry
+  // list. A season with no results yet keeps the "no results" message.
+  const standingsByDriver = new Map(standings.map((s) => [s.driver_id, s]));
+  const zeroResultEntrants: StandingsViewRow[] =
+    standings.length === 0
+      ? []
+      : entries
+          .filter((e) => !standingsByDriver.has(e.driver_id))
+          .map((e) => ({
+            driver_id: e.driver_id,
+            points: 0,
+            wins: 0,
+            podiums: 0,
+            fastest_laps: 0,
+          }));
+  const tableRows = [...standings, ...zeroResultEntrants]
     .map((s) => {
       const entry = entryByDriver.get(s.driver_id);
       const stints = Array.from(stintsByDriver.get(s.driver_id)?.values() ?? []).sort(
