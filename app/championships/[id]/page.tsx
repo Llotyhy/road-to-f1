@@ -148,10 +148,19 @@ const CHAMPIONSHIP_TITLES: Record<string, string> = {
 };
 
 /** Lineage note shown under the class-page header: championships that are
- *  the same series continued under a different name (GP2 -> FIA Formula 2). */
+ *  the same series continued under a different name (GP2 -> FIA Formula 2;
+ *  Toyota Racing Series -> FR Oceania, rebranded from the 2023 season). */
 const LINEAGE: Record<string, { label: string; href: string }> = {
   f2: { label: "Preceded by GP2 Series · 2005\u20132016", href: "/championships/gp2" },
   gp2: { label: "Succeeded by FIA Formula 2 · from 2017", href: "/championships/f2" },
+  "fr-oceania": {
+    label: "Formerly Toyota Racing Series · 2005\u20132022",
+    href: "/championships/toyota-racing-series",
+  },
+  "toyota-racing-series": {
+    label: "Succeeded by FR Oceania · from 2023",
+    href: "/championships/fr-oceania",
+  },
 };
 
 function championshipTitle(id: string): string {
@@ -814,6 +823,13 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
             </tbody>
           </table>
           </div>
+          {/* Round naming: official event name where one exists, else the
+              circuit; the full circuit name always shows in gray above. */}
+          <p style={{ color: "#999", fontSize: 12, margin: "8px 0 0" }}>
+            Weekend names use the round&apos;s official name where one exists
+            (a memorial trophy or Grand Prix); otherwise the weekend is named
+            after its circuit, shown in full in gray.
+          </p>
         </section>
       )}
     </main>
