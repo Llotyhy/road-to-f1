@@ -130,7 +130,7 @@ const CHAMPIONSHIP_TITLES: Record<string, string> = {
   "f4-british": "British F4",
   "f4-spanish": "Spanish F4",
   "f4-french": "French F4",
-  "f4-uae": "F4 UAE",
+  "f4-uae": "UAE4 Series",
   "f4-us": "US F4",
   "super-formula": "Super Formula",
   "macau-gp": "Macau GP",
@@ -149,8 +149,10 @@ const CHAMPIONSHIP_TITLES: Record<string, string> = {
 
 /** Lineage note shown under the class-page header: championships that are
  *  the same series continued under a different name (GP2 -> FIA Formula 2;
- *  Toyota Racing Series -> FR Oceania, rebranded from the 2023 season). */
-const LINEAGE: Record<string, { label: string; href: string }> = {
+ *  Toyota Racing Series -> FR Oceania, rebranded from the 2023 season;
+ *  F4 UAE -> UAE4 Series, renamed from 2026 — an href-less entry renders
+ *  as plain text, for renames with no separate former championship page). */
+const LINEAGE: Record<string, { label: string; href?: string }> = {
   f2: { label: "Preceded by GP2 Series · 2005\u20132016", href: "/championships/gp2" },
   gp2: { label: "Succeeded by FIA Formula 2 · from 2017", href: "/championships/f2" },
   "fr-oceania": {
@@ -160,6 +162,10 @@ const LINEAGE: Record<string, { label: string; href: string }> = {
   "toyota-racing-series": {
     label: "Succeeded by FR Oceania · from 2023",
     href: "/championships/fr-oceania",
+  },
+  "f4-uae": {
+    label:
+      "Formerly F4 Middle East Championship (2025) and Formula 4 UAE Championship (2016\u20132024)",
   },
 };
 
@@ -673,9 +679,13 @@ export default async function ChampionshipPage({ params, searchParams }: PagePro
       {/* Series lineage (same series, continued under a new name) */}
       {LINEAGE[id] && (
         <p style={{ marginTop: 2, fontSize: 14 }}>
-          <Link href={LINEAGE[id].href} style={link}>
-            {LINEAGE[id].label}
-          </Link>
+          {LINEAGE[id].href ? (
+            <Link href={LINEAGE[id].href} style={link}>
+              {LINEAGE[id].label}
+            </Link>
+          ) : (
+            <span style={{ color: "#555" }}>{LINEAGE[id].label}</span>
+          )}
         </p>
       )}
 
