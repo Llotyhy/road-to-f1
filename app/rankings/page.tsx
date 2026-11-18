@@ -1,11 +1,14 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { unstable_cache } from "next/cache";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
-// ISR: prerendered at deploy time and refreshed hourly (plus an immediate
-// refresh when /api/revalidate is pinged after an ingestion). The Super
-// Licence table only changes when a season SQL runs, so caching is safe.
-export const revalidate = 3600;
+// Per-request render (the ?year= licence pills read searchParams, which
+// opts the route out of the full route cache) — instead, every query below
+// is cached at the data layer, keyed on the selected licence year, exactly
+// like the championship pages (same "racing-data" tag, purged by
+// /api/revalidate after an ingestion).
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   description:
@@ -16,6 +19,10 @@ export const metadata: Metadata = {
       "FIA Super Licence standings, computed live from every result in the database — who is closest to a Formula 1 seat — plus what's coming next.",
     images: [{ url: "/opengraph-image.png", width: 1200, height: 630 }],
   },
+};
+
+type PageProps = {
+  searchParams: Promise<{ year?: string }>;
 };
 
 type SLRow = {
@@ -66,6 +73,24 @@ type BonusRow = {
   points: number | string;
 };
 
+type Entry = {
+  driverId: string;
+  perYear: Record<number, number>;
+  total: number;
+  projected: number;
+  projected26: number;
+};
+
+type LoadResult = {
+  loadError: string | null;
+  entries: Entry[];
+  drivers: DriverRow[];
+  inProgressShortNames: string[];
+  hasProjections: boolean;
+  projectionsBroken: boolean;
+  earliestYear: number | null;
+};
+
 /** Compute the flag emoji from an ISO 3166-1 alpha-2 code. */
 function flagEmoji(code: string): string {
   if (!/^[A-Z]{2}$/.test(code)) return "";
@@ -86,7 +111,8 @@ const PLANNED = [
   },
 ];
 
-export default async function RankingsPage() {
+export default async function RankingsPage({ searchParams }: PageProps) {
+  const { year } = await searchParams;
   const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
@@ -101,284 +127,407 @@ export default async function RankingsPage() {
     );
   }
 
-  // The rolling three-year FIA window: the three seasons preceding next year.
-  // For a 2027 licence that is 2024-2026 — same window as the driver profiles.
+  // The licence year is the F1 season the Super Licence would be for. The
+  // FIA counts the three seasons preceding it (for 2027 that is 2024-2026 —
+  // the same window the page showed when it was hard-coded).
   const currentYear = new Date().getUTCFullYear();
-  const windowYears = [currentYear - 2, currentYear - 1, currentYear];
+  const defaultLicenceYear = currentYear + 1;
 
-  // Super Licence rows for the window, paginated (PostgREST caps at 1000 rows).
-  const slRows: SLRow[] = [];
-  let loadError: string | null = null;
-  let start = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from("v_superlicence_season")
-      .select("driver_id, championship_id, year, sl_points")
-      .in("year", windowYears)
-      .order("driver_id")
-      .range(start, start + 999);
-    if (error) {
-      loadError = error.message;
-      break;
-    }
-    const page = (data ?? []) as unknown as SLRow[];
-    slRows.push(...page);
-    if (page.length < 1000) break;
-    start += 1000;
-  }
+  // Earliest season with Super Licence points on record (Italian F4 2014
+  // today) — defines the first selectable licence year.
+  const loadEarliest = unstable_cache(
+    async () => {
+      const sb = getSupabaseAdminClient();
+      if (!sb) return null;
+      const { data } = await sb
+        .from("v_superlicence_season")
+        .select("year")
+        .order("year", { ascending: true })
+        .limit(1);
+      const rows = (data ?? []) as unknown as { year: number }[];
+      return rows.length > 0 ? Number(rows[0].year) : null;
+    },
+    ["rankings-page-earliest"],
+    { revalidate: 3600, tags: ["racing-data"] }
+  );
 
-  // F1 free-practice bonus points for the window (FIA Appendix L: one point
-  // per FP1 session with 100+ km completed, up to 10 per season, awarded on
-  // top of the two best championships per year). Same sl_bonus_points source
-  // as the driver profiles, so the two pages can never disagree.
-  const fp1ByDriverYear = new Map<string, Map<number, number>>();
-  if (!loadError) {
-    const { data: bonusData } = await supabase
-      .from("sl_bonus_points")
-      .select("driver_id, year, points")
-      .eq("category", "f1_free_practice")
-      .in("year", windowYears);
-    for (const r of (bonusData ?? []) as unknown as BonusRow[]) {
-      let byYear = fp1ByDriverYear.get(r.driver_id);
-      if (!byYear) {
-        byYear = new Map();
-        fp1ByDriverYear.set(r.driver_id, byYear);
+  // Validate ?year=: an integer licence year inside the selectable range.
+  const earliestYear = await loadEarliest();
+  const firstLicenceYear =
+    earliestYear === null ? null : earliestYear + 3;
+  const parsed = year ? Number(year) : null;
+  const licenceYear =
+    parsed !== null &&
+    Number.isInteger(parsed) &&
+    parsed >= (firstLicenceYear ?? 9999) &&
+    parsed <= defaultLicenceYear
+      ? parsed
+      : defaultLicenceYear;
+  const windowYears = [licenceYear - 3, licenceYear - 2, licenceYear - 1];
+  const isDefaultView = licenceYear === defaultLicenceYear;
+
+  // Everything the board needs, in one data-layer cache entry keyed on the
+  // licence year (the window follows from it). Same shape as the
+  // championship pages: per-request render, cached queries.
+  const loadData = unstable_cache(
+    async (
+      ly: number,
+      wins: number[],
+      projectionsEnabled: boolean
+    ): Promise<LoadResult> => {
+      const sb = getSupabaseAdminClient();
+      if (!sb) {
+        return {
+          loadError: "no-supabase",
+          entries: [],
+          drivers: [],
+          inProgressShortNames: [],
+          hasProjections: false,
+          projectionsBroken: false,
+          earliestYear: null,
+        };
       }
-      // Cap at 10 per season (the FIA rule) in case of overlapping rows.
-      byYear.set(r.year, Math.min(10, (byYear.get(r.year) ?? 0) + Number(r.points ?? 0)));
-    }
-  }
-  const fp1For = (driverId: string, year: number): number =>
-    fp1ByDriverYear.get(driverId)?.get(year) ?? 0;
 
-  // Per driver and year, the counted Super Licence points. FIA rule as the
-  // database models it: at most two championships count per calendar year
-  // (the two best results), so a driver contesting three series in one
-  // season only keeps their top two scores.
-  const pointsByDriverYear = new Map<string, Map<number, number[]>>();
-  for (const r of slRows) {
-    const pts = Number(r.sl_points ?? 0);
-    let byYear = pointsByDriverYear.get(r.driver_id);
-    if (!byYear) {
-      byYear = new Map();
-      pointsByDriverYear.set(r.driver_id, byYear);
-    }
-    const list = byYear.get(r.year);
-    if (list) list.push(pts);
-    else byYear.set(r.year, [pts]);
-  }
+      const earliest = await (async () => {
+        const { data } = await sb
+          .from("v_superlicence_season")
+          .select("year")
+          .order("year", { ascending: true })
+          .limit(1);
+        const rows = (data ?? []) as unknown as { year: number }[];
+        return rows.length > 0 ? Number(rows[0].year) : null;
+      })();
 
-  type Entry = {
-    driverId: string;
-    perYear: Record<number, number>;
-    total: number;
-    projected: number;
-    projected26: number;
-  };
-  const entries: Entry[] = [];
-  for (const [driverId, byYear] of pointsByDriverYear) {
-    const perYear: Record<number, number> = {};
-    let total = 0;
-    for (const year of windowYears) {
-      const list = (byYear.get(year) ?? []).sort((a, b) => b - a);
-      const counted = list.slice(0, 2).reduce((a, b) => a + b, 0);
-      // Practice bonuses are official points, so they fold into the year
-      // columns and the total (the footnote spells this out).
-      perYear[year] = counted + fp1For(driverId, year);
-      total += perYear[year];
-    }
-    if (total > 0) {
-      entries.push({ driverId, perYear, total, projected: total, projected26: 0 });
-    }
-  }
-
-  // Drivers whose only window points are F1 free-practice bonuses (e.g. a
-  // race driver whose junior championships all fall outside the window)
-  // still belong on the board.
-  for (const [driverId, byYear] of fp1ByDriverYear) {
-    if (pointsByDriverYear.has(driverId)) continue;
-    const perYear: Record<number, number> = {};
-    let total = 0;
-    for (const y of windowYears) {
-      perYear[y] = byYear.get(y) ?? 0;
-      total += perYear[y];
-    }
-    if (total <= 0) continue;
-    entries.push({ driverId, perYear, total, projected: total, projected26: 0 });
-  }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // PROJECTIONS — what the total would be if every in-progress current-year
-  // championship ended at today's standings. The FIA only awards points once
-  // a championship is complete, so this is an estimate shown in its own
-  // column. A season is "in progress" when none of its season_entries have a
-  // final position yet (F2 2026 until the Yas Marina finale, Spanish F4
-  // until its last round) — decided seasons are excluded automatically, so
-  // the column fills and empties itself as seasons end.
-  // ───────────────────────────────────────────────────────────────────────
-  const projectedLists = new Map<string, number[]>();
-  const inProgressShortNames: string[] = [];
-  let projectionsBroken = false;
-
-  if (!loadError) {
-    const { data: seasonsData } = await supabase
-      .from("seasons")
-      .select("id, championship_id")
-      .eq("year", currentYear);
-    const seasons = (seasonsData ?? []) as unknown as SeasonRow[];
-    const seasonIds = seasons.map((s) => s.id);
-
-    const decidedSeasonIds = new Set<string>();
-    if (seasonIds.length > 0) {
-      let sStart = 0;
+      // Super Licence rows for the window, paginated (PostgREST caps at 1000 rows).
+      const slRows: SLRow[] = [];
+      let loadError: string | null = null;
+      let start = 0;
       while (true) {
-        const { data: entriesData } = await supabase
-          .from("season_entries")
-          .select("season_id, final_position")
-          .in("season_id", seasonIds)
-          .range(sStart, sStart + 999);
-        const page = (entriesData ?? []) as unknown as SeasonEntryRow[];
-        for (const row of page) {
-          if (row.final_position !== null) decidedSeasonIds.add(row.season_id);
+        const { data, error } = await sb
+          .from("v_superlicence_season")
+          .select("driver_id, championship_id, year, sl_points")
+          .in("year", wins)
+          .order("driver_id")
+          .range(start, start + 999);
+        if (error) {
+          loadError = error.message;
+          break;
         }
+        const page = (data ?? []) as unknown as SLRow[];
+        slRows.push(...page);
         if (page.length < 1000) break;
-        sStart += 1000;
-      }
-    }
-    const inProgressIds = seasonIds.filter((id) => !decidedSeasonIds.has(id));
-
-    if (inProgressIds.length > 0) {
-      const { data: standingsData } = await supabase
-        .from("v_championship_standings")
-        .select("season_id, championship_id, short_name, driver_id, points, wins, podiums")
-        .in("season_id", inProgressIds);
-      const standings = (standingsData ?? []) as unknown as StandingsRow[];
-
-      const bySeason = new Map<string, StandingsRow[]>();
-      for (const r of standings) {
-        const list = bySeason.get(r.season_id);
-        if (list) list.push(r);
-        else bySeason.set(r.season_id, [r]);
+        start += 1000;
       }
 
-      // Latest FIA allocation version applicable to the current year, per
-      // championship and position (mirrors the view's ORDER BY valid_from_year
-      // DESC LIMIT 1 — later versions simply win).
-      const champIds = Array.from(
-        new Set(
-          seasons
-            .filter((s) => inProgressIds.indexOf(s.id) !== -1)
-            .map((s) => s.championship_id)
-        )
-      );
-      const allocByChamp = new Map<string, Map<number, number>>();
-      if (champIds.length > 0) {
-        const { data: allocData } = await supabase
-          .from("sl_points_allocation")
-          .select("championship_id, position, points, valid_from_year, valid_to_year")
-          .in("championship_id", champIds);
-        const versions = new Map<string, Map<number, { from: number; pts: number }>>();
-        for (const a of (allocData ?? []) as unknown as AllocationRow[]) {
-          const from = Number(a.valid_from_year);
-          const to = a.valid_to_year === null ? 9999 : Number(a.valid_to_year);
-          if (currentYear < from || currentYear > to) continue;
-          let m = versions.get(a.championship_id);
-          if (!m) {
-            m = new Map();
-            versions.set(a.championship_id, m);
+      // F1 free-practice bonus points for the window (FIA Appendix L: one point
+      // per FP1 session with 100+ km completed, up to 10 per season, awarded on
+      // top of the two best championships per year). Same sl_bonus_points source
+      // as the driver profiles, so the two pages can never disagree.
+      const fp1ByDriverYear = new Map<string, Map<number, number>>();
+      if (!loadError) {
+        const { data: bonusData } = await sb
+          .from("sl_bonus_points")
+          .select("driver_id, year, points")
+          .eq("category", "f1_free_practice")
+          .in("year", wins);
+        for (const r of (bonusData ?? []) as unknown as BonusRow[]) {
+          let byYear = fp1ByDriverYear.get(r.driver_id);
+          if (!byYear) {
+            byYear = new Map();
+            fp1ByDriverYear.set(r.driver_id, byYear);
           }
-          const pos = Number(a.position);
-          const existing = m.get(pos);
-          if (existing === undefined || from > existing.from) {
-            m.set(pos, { from, pts: Number(a.points) });
-          }
+          // Cap at 10 per season (the FIA rule) in case of overlapping rows.
+          byYear.set(
+            r.year,
+            Math.min(10, (byYear.get(r.year) ?? 0) + Number(r.points ?? 0))
+          );
         }
-        for (const [champ, m] of versions) {
-          const flat = new Map<number, number>();
-          for (const [pos, v] of m) flat.set(pos, v.pts);
-          allocByChamp.set(champ, flat);
+      }
+      const fp1For = (driverId: string, year: number): number =>
+        fp1ByDriverYear.get(driverId)?.get(year) ?? 0;
+
+      // Per driver and year, the counted Super Licence points. FIA rule as the
+      // database models it: at most two championships count per calendar year
+      // (the two best results), so a driver contesting three series in one
+      // season only keeps their top two scores.
+      const pointsByDriverYear = new Map<string, Map<number, number[]>>();
+      for (const r of slRows) {
+        const pts = Number(r.sl_points ?? 0);
+        let byYear = pointsByDriverYear.get(r.driver_id);
+        if (!byYear) {
+          byYear = new Map();
+          pointsByDriverYear.set(r.driver_id, byYear);
+        }
+        const list = byYear.get(r.year);
+        if (list) list.push(pts);
+        else byYear.set(r.year, [pts]);
+      }
+
+      const entries: Entry[] = [];
+      for (const [driverId, byYear] of pointsByDriverYear) {
+        const perYear: Record<number, number> = {};
+        let total = 0;
+        for (const year of wins) {
+          const list = (byYear.get(year) ?? []).sort((a, b) => b - a);
+          const counted = list.slice(0, 2).reduce((a, b) => a + b, 0);
+          // Practice bonuses are official points, so they fold into the year
+          // columns and the total (the footnote spells this out).
+          perYear[year] = counted + fp1For(driverId, year);
+          total += perYear[year];
+        }
+        if (total > 0) {
+          entries.push({
+            driverId,
+            perYear,
+            total,
+            projected: total,
+            projected26: 0,
+          });
         }
       }
 
-      // Rank each in-progress season at its current standings (the site's
-      // sort: points, wins, podiums) and award allocation points for P1-P10.
-      for (const [seasonId, rows] of bySeason) {
-        const champId = seasons.find((s) => s.id === seasonId)?.championship_id;
-        if (!champId) continue;
-        const alloc = allocByChamp.get(champId);
-        if (!alloc) {
-          projectionsBroken = true;
-          continue;
+      // Drivers whose only window points are F1 free-practice bonuses (e.g. a
+      // race driver whose junior championships all fall outside the window)
+      // still belong on the board.
+      for (const [driverId, byYear] of fp1ByDriverYear) {
+        if (pointsByDriverYear.has(driverId)) continue;
+        const perYear: Record<number, number> = {};
+        let total = 0;
+        for (const y of wins) {
+          perYear[y] = byYear.get(y) ?? 0;
+          total += perYear[y];
         }
-        const short = rows[0]?.short_name ?? champId;
-        if (inProgressShortNames.indexOf(short) === -1) inProgressShortNames.push(short);
-        const sorted = [...rows].sort(
-          (a, b) =>
-            Number(b.points ?? 0) - Number(a.points ?? 0) ||
-            Number(b.wins ?? 0) - Number(a.wins ?? 0) ||
-            Number(b.podiums ?? 0) - Number(a.podiums ?? 0)
-        );
-        sorted.forEach((r, idx) => {
-          const pos = idx + 1;
-          if (pos > 10) return;
-          const pts = alloc.get(pos) ?? 0;
-          if (pts <= 0) return;
-          const list = projectedLists.get(r.driver_id);
-          if (list) list.push(pts);
-          else projectedLists.set(r.driver_id, [pts]);
+        if (total <= 0) continue;
+        entries.push({
+          driverId,
+          perYear,
+          total,
+          projected: total,
+          projected26: 0,
         });
       }
-    }
-  }
 
-  const hasProjections = projectedLists.size > 0;
+      // ───────────────────────────────────────────────────────────────────────
+      // PROJECTIONS — what the total would be if every in-progress current-year
+      // championship ended at today's standings. The FIA only awards points once
+      // a championship is complete, so this is an estimate shown in its own
+      // column. A season is "in progress" when none of its season_entries have
+      // a final position yet (F2 2026 until the Yas Marina finale, Spanish F4
+      // until its last round) — decided seasons are excluded automatically, so
+      // the column fills and empties itself as seasons end. Historical windows
+      // are complete by definition, so only the default view projects.
+      // ───────────────────────────────────────────────────────────────────────
+      const projectedLists = new Map<string, number[]>();
+      const inProgressShortNames: string[] = [];
+      let projectionsBroken = false;
 
-  // Merge projections into the entries: the projected current-year score is
-  // the best two of (official current-year points + projected points), and
-  // the projected total replaces the counted current-year column in the sum.
-  // The current-year F1 practice bonus is official, not projected, so it
-  // rides along in the projected total too.
-  for (const e of entries) {
-    const list = projectedLists.get(e.driverId);
-    if (!list) continue;
-    const merged = [
-      ...(pointsByDriverYear.get(e.driverId)?.get(currentYear) ?? []),
-      ...list,
-    ].sort((a, b) => b - a);
-    e.projected26 = merged.slice(0, 2).reduce((a, b) => a + b, 0);
-    e.projected =
-      e.perYear[windowYears[0]] +
-      e.perYear[windowYears[1]] +
-      e.projected26 +
-      fp1For(e.driverId, currentYear);
-  }
+      if (!loadError && projectionsEnabled) {
+        const lastWindowYear = wins[wins.length - 1];
+        const { data: seasonsData } = await sb
+          .from("seasons")
+          .select("id, championship_id")
+          .eq("year", lastWindowYear);
+        const seasons = (seasonsData ?? []) as unknown as SeasonRow[];
+        const seasonIds = seasons.map((s) => s.id);
 
-  // Drivers whose only window relevance is a projection (e.g. an F2 rookie
-  // leading the current season) still belong on the board. Drivers already
-  // on the board through championships or practice bonuses were merged above.
-  for (const [driverId, list] of projectedLists) {
-    if (pointsByDriverYear.has(driverId) || fp1ByDriverYear.has(driverId)) continue;
-    const projected26 = [...list].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0);
-    if (projected26 <= 0) continue;
-    const perYear: Record<number, number> = {};
-    for (const y of windowYears) perYear[y] = 0;
-    entries.push({ driverId, perYear, total: 0, projected: projected26, projected26 });
-  }
+        const decidedSeasonIds = new Set<string>();
+        if (seasonIds.length > 0) {
+          let sStart = 0;
+          while (true) {
+            const { data: entriesData } = await sb
+              .from("season_entries")
+              .select("season_id, final_position")
+              .in("season_id", seasonIds)
+              .range(sStart, sStart + 999);
+            const page = (entriesData ?? []) as unknown as SeasonEntryRow[];
+            for (const row of page) {
+              if (row.final_position !== null) decidedSeasonIds.add(row.season_id);
+            }
+            if (page.length < 1000) break;
+            sStart += 1000;
+          }
+        }
+        const inProgressIds = seasonIds.filter(
+          (id) => !decidedSeasonIds.has(id)
+        );
 
-  // Driver details for the names and links (batched .in lookups).
-  const drivers = new Map<string, DriverRow>();
-  const driverIds = entries.map((e) => e.driverId);
-  for (let i = 0; i < driverIds.length; i += 100) {
-    const { data } = await supabase
-      .from("drivers")
-      .select("id, slug, full_name, nationality")
-      .in("id", driverIds.slice(i, i + 100));
-    for (const d of (data ?? []) as unknown as DriverRow[]) {
-      drivers.set(d.id, d);
-    }
-  }
+        if (inProgressIds.length > 0) {
+          const { data: standingsData } = await sb
+            .from("v_championship_standings")
+            .select(
+              "season_id, championship_id, short_name, driver_id, points, wins, podiums"
+            )
+            .in("season_id", inProgressIds);
+          const standings = (standingsData ?? []) as unknown as StandingsRow[];
 
-  const named = entries
+          const bySeason = new Map<string, StandingsRow[]>();
+          for (const r of standings) {
+            const list = bySeason.get(r.season_id);
+            if (list) list.push(r);
+            else bySeason.set(r.season_id, [r]);
+          }
+
+          // Latest FIA allocation version applicable to the window's last
+          // year, per championship and position (mirrors the view's
+          // ORDER BY valid_from_year DESC LIMIT 1 — later versions simply win).
+          const champIds = Array.from(
+            new Set(
+              seasons
+                .filter((s) => inProgressIds.indexOf(s.id) !== -1)
+                .map((s) => s.championship_id)
+            )
+          );
+          const allocByChamp = new Map<string, Map<number, number>>();
+          if (champIds.length > 0) {
+            const { data: allocData } = await sb
+              .from("sl_points_allocation")
+              .select(
+                "championship_id, position, points, valid_from_year, valid_to_year"
+              )
+              .in("championship_id", champIds);
+            const versions = new Map<
+              string,
+              Map<number, { from: number; pts: number }>
+            >();
+            for (const a of (allocData ?? []) as unknown as AllocationRow[]) {
+              const from = Number(a.valid_from_year);
+              const to =
+                a.valid_to_year === null ? 9999 : Number(a.valid_to_year);
+              if (lastWindowYear < from || lastWindowYear > to) continue;
+              let m = versions.get(a.championship_id);
+              if (!m) {
+                m = new Map();
+                versions.set(a.championship_id, m);
+              }
+              const pos = Number(a.position);
+              const existing = m.get(pos);
+              if (existing === undefined || from > existing.from) {
+                m.set(pos, { from, pts: Number(a.points) });
+              }
+            }
+            for (const [champ, m] of versions) {
+              const flat = new Map<number, number>();
+              for (const [pos, v] of m) flat.set(pos, v.pts);
+              allocByChamp.set(champ, flat);
+            }
+          }
+
+          // Rank each in-progress season at its current standings (the site's
+          // sort: points, wins, podiums) and award allocation points for P1-P10.
+          for (const [seasonId, rows] of bySeason) {
+            const champId = seasons.find((s) => s.id === seasonId)?.championship_id;
+            if (!champId) continue;
+            const alloc = allocByChamp.get(champId);
+            if (!alloc) {
+              projectionsBroken = true;
+              continue;
+            }
+            const short = rows[0]?.short_name ?? champId;
+            if (inProgressShortNames.indexOf(short) === -1)
+              inProgressShortNames.push(short);
+            const sorted = [...rows].sort(
+              (a, b) =>
+                Number(b.points ?? 0) - Number(a.points ?? 0) ||
+                Number(b.wins ?? 0) - Number(a.wins ?? 0) ||
+                Number(b.podiums ?? 0) - Number(a.podiums ?? 0)
+            );
+            sorted.forEach((r, idx) => {
+              const pos = idx + 1;
+              if (pos > 10) return;
+              const pts = alloc.get(pos) ?? 0;
+              if (pts <= 0) return;
+              const list = projectedLists.get(r.driver_id);
+              if (list) list.push(pts);
+              else projectedLists.set(r.driver_id, [pts]);
+            });
+          }
+        }
+      }
+
+      const hasProjections = projectedLists.size > 0;
+
+      // Merge projections into the entries: the projected last-year score is
+      // the best two of (official last-year points + projected points), and
+      // the projected total replaces the counted last-year column in the sum.
+      // The last-year F1 practice bonus is official, not projected, so it
+      // rides along in the projected total too.
+      if (projectionsEnabled) {
+        const lastWindowYear = wins[wins.length - 1];
+        for (const e of entries) {
+          const list = projectedLists.get(e.driverId);
+          if (!list) continue;
+          const merged = [
+            ...(pointsByDriverYear.get(e.driverId)?.get(lastWindowYear) ?? []),
+            ...list,
+          ].sort((a, b) => b - a);
+          e.projected26 = merged.slice(0, 2).reduce((a, b) => a + b, 0);
+          e.projected =
+            e.perYear[wins[0]] +
+            e.perYear[wins[1]] +
+            e.projected26 +
+            fp1For(e.driverId, lastWindowYear);
+        }
+
+        // Drivers whose only window relevance is a projection (e.g. an F2
+        // rookie leading the current season) still belong on the board.
+        // Drivers already on the board through championships or practice
+        // bonuses were merged above.
+        for (const [driverId, list] of projectedLists) {
+          if (pointsByDriverYear.has(driverId) || fp1ByDriverYear.has(driverId))
+            continue;
+          const projected26 = [...list]
+            .sort((a, b) => b - a)
+            .slice(0, 2)
+            .reduce((a, b) => a + b, 0);
+          if (projected26 <= 0) continue;
+          const perYear: Record<number, number> = {};
+          for (const y of wins) perYear[y] = 0;
+          entries.push({
+            driverId,
+            perYear,
+            total: 0,
+            projected: projected26,
+            projected26,
+          });
+        }
+      }
+
+      // Driver details for the names and links (batched .in lookups).
+      const drivers = new Map<string, DriverRow>();
+      const driverIds = entries.map((e) => e.driverId);
+      for (let i = 0; i < driverIds.length; i += 100) {
+        const { data } = await sb
+          .from("drivers")
+          .select("id, slug, full_name, nationality")
+          .in("id", driverIds.slice(i, i + 100));
+        for (const d of (data ?? []) as unknown as DriverRow[]) {
+          drivers.set(d.id, d);
+        }
+      }
+
+      return {
+        loadError,
+        entries,
+        drivers: Array.from(drivers.values()),
+        inProgressShortNames,
+        hasProjections,
+        projectionsBroken,
+        earliestYear: earliest,
+      };
+    },
+    ["rankings-page", String(licenceYear)],
+    { revalidate: 3600, tags: ["racing-data"] }
+  );
+
+  const loaded = await loadData(licenceYear, windowYears, isDefaultView);
+  const loadError = loaded.loadError;
+  const inProgressShortNames = loaded.inProgressShortNames;
+  const hasProjections = loaded.hasProjections;
+  const projectionsBroken = loaded.projectionsBroken;
+
+  const drivers = new Map(loaded.drivers.map((d) => [d.id, d]));
+
+  const named = loaded.entries
     .filter((e) => drivers.has(e.driverId))
     .map((e) => {
       const d = drivers.get(e.driverId)!;
@@ -392,8 +541,8 @@ export default async function RankingsPage() {
   named.sort(
     (a, b) =>
       b.total - a.total ||
-      b.perYear[currentYear] - a.perYear[currentYear] ||
-      b.perYear[currentYear - 1] - a.perYear[currentYear - 1] ||
+      (b.perYear[windowYears[2]] ?? 0) - (a.perYear[windowYears[2]] ?? 0) ||
+      (b.perYear[windowYears[1]] ?? 0) - (a.perYear[windowYears[1]] ?? 0) ||
       a.name.localeCompare(b.name)
   );
 
@@ -403,6 +552,14 @@ export default async function RankingsPage() {
   );
   for (let i = 1; i < positions.length; i++) {
     if (positions[i] === -1) positions[i] = positions[i - 1];
+  }
+
+  // Licence-year pills: every year whose three-season window is inside the
+  // points on record, plus the default (next year) view.
+  const pillYears: number[] = [];
+  const first = loaded.earliestYear === null ? null : loaded.earliestYear + 3;
+  if (first !== null) {
+    for (let y = first; y <= defaultLicenceYear; y++) pillYears.push(y);
   }
 
   const th = {
@@ -461,10 +618,51 @@ export default async function RankingsPage() {
         </span>
         <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>Super Licence standings</h2>
         <p style={{ margin: "0 0 16px", color: "#94a3b8", lineHeight: 1.6, fontSize: 14 }}>
-          FIA Super Licence points over the rolling three-year window
-          ({windowYears[0]}–{windowYears[2]}, the seasons preceding {currentYear + 1}).
-          40 points is what the FIA requires for a Super Licence.
+          {isDefaultView ? (
+            <>
+              FIA Super Licence points over the rolling three-year window
+              ({windowYears[0]}–{windowYears[2]}, the seasons preceding {licenceYear}).
+              40 points is what the FIA requires for a Super Licence.
+            </>
+          ) : (
+            <>
+              FIA Super Licence points for the {licenceYear} season —
+              championships completed in {windowYears[0]}–{windowYears[2]}.
+              40 points is what the FIA requires for a Super Licence.
+            </>
+          )}
         </p>
+
+        {/* Licence-year switcher — same window the FIA would have counted
+            for that season's licence. */}
+        {pillYears.length > 1 && (
+          <nav
+            aria-label="Licence year"
+            style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 16px", alignItems: "center" }}
+          >
+            {pillYears.map((y) => {
+              const active = y === licenceYear;
+              return (
+                <Link
+                  key={y}
+                  href={y === defaultLicenceYear ? "/rankings" : `/rankings?year=${y}`}
+                  style={{
+                    padding: "4px 14px",
+                    borderRadius: 999,
+                    fontSize: 14,
+                    textDecoration: "none",
+                    border: `1px solid ${active ? "#f97316" : "#1e293b"}`,
+                    color: active ? "#fff" : "#94a3b8",
+                    background: active ? "#f97316" : "transparent",
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {y}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         {loadError ? (
           <p style={{ color: "#f97316", fontSize: 14, margin: 0 }}>
@@ -552,15 +750,26 @@ export default async function RankingsPage() {
           point per practice session with 100 km completed, up to 10 per
           season, on top of the two championships (already folded into the
           year columns). Eligibility also requires age, mileage and FIA
-          approval — this table shows points earned. The {currentYear} column
-          updates live as each season ends
-          {hasProjections
-            ? `. Projected: what the total would be if every in-progress ${currentYear} championship (${inProgressShortNames.join(", ")}) ended at today's standings — the FIA only awards points once a championship is complete, so it is an estimate`
-            : ""}
-          {projectionsBroken
-            ? ". One in-progress championship has no Super Licence allocation yet and is not projected"
-            : ""}
-          .
+          approval — this table shows points earned.
+          {isDefaultView ? (
+            <>
+              {" "}The {windowYears[2]} column
+              updates live as each season ends
+              {hasProjections
+                ? `. Projected: what the total would be if every in-progress ${windowYears[2]} championship (${inProgressShortNames.join(", ")}) ended at today's standings — the FIA only awards points once a championship is complete, so it is an estimate`
+                : ""}
+              {projectionsBroken
+                ? ". One in-progress championship has no Super Licence allocation yet and is not projected"
+                : ""}
+              .
+            </>
+          ) : (
+            <>
+              {" "}The FIA counts the three
+              seasons preceding the {licenceYear} one — this window is
+              complete, so the totals are final.
+            </>
+          )}
         </p>
       </section>
 
