@@ -148,8 +148,19 @@ const LADDER_TIERS: { label: string; accent: string; items: LadderItem[] }[] = [
 ];
 
 // In the database but deliberately not listed on this page — their
-// /championships pages stay reachable via their URLs.
-const HIDDEN_FROM_INDEX = ["macau-gp"];
+// /championships pages stay reachable via their URLs. The FIA karting
+// championships are standings-level Super Licence sources (2017-2026
+// backfill), kept off the index grid like Macau.
+const HIDDEN_FROM_INDEX = [
+  "macau-gp",
+  "karting-world-ok",
+  "karting-world-okj",
+  "karting-world-kz",
+  "karting-euro-ok",
+  "karting-euro-okj",
+  "karting-euro-kz",
+  "karting-euro-kz2",
+];
 
 const FORMER_ORDER = [
   "gp2",
