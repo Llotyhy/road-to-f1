@@ -225,7 +225,7 @@ export default async function DriverPage({ params }: PageProps) {
   // Career, academy memberships, per-race results, Super Licence rows and
   // discretionary bonus points all hang off the driver id alone: fetched in
   // ONE parallel batch instead of five sequential round-trips.
-  const [careerRes, membershipRes, resultsRes, slRes, bonusRes] = await Promise.all([
+  const [careerRes, membershipRes, resultsRes, slRes, bonusRes, extStandingsRes] = await Promise.all([
     supabase
       .from("v_driver_career")
       .select("year, championship_id, short_name, team_id, rookie, final_position")
@@ -247,6 +247,10 @@ export default async function DriverPage({ params }: PageProps) {
       .select("year, points")
       .eq("driver_id", driver.id)
       .eq("category", "f1_free_practice"),
+    supabase
+      .from("external_standings")
+      .select("championship_id, year, final_position")
+      .eq("driver_id", driver.id),
   ]);
   const career = ((careerRes.data ?? []) as unknown as CareerViewRow[]).slice().sort(
     (a, b) => a.year - b.year || a.championship_id.localeCompare(b.championship_id)
@@ -262,6 +266,11 @@ export default async function DriverPage({ params }: PageProps) {
   const results = (resultsRes.data ?? []) as unknown as ResultRow[];
   const slRows = (slRes.data ?? []) as unknown as SLRow[];
   const bonusRows = (bonusRes.data ?? []) as unknown as BonusRow[];
+  const extStandings = ((extStandingsRes.data ?? []) as unknown as {
+    championship_id: string;
+    year: number;
+    final_position: number | null;
+  }[]).slice();
 
   // Seasons for every championship this driver ever entered, plus the full
   // championship names (title badges, silverware tab) — both keyed on the
@@ -285,6 +294,25 @@ export default async function DriverPage({ params }: PageProps) {
     }
     for (const c of (champsRes.data ?? []) as unknown as Championship[]) {
       champNames[c.id] = c.name;
+    }
+  }
+  // Standings-level championships (external_standings) this driver appears
+  // in: karting, IMSA, NASCAR, WEC, Formula E, IndyCar. Needed for the
+  // title badges and the season-by-season rows built below.
+  const extShortNames = new Map<string, string>();
+  const extChampIds = Array.from(new Set(extStandings.map((e) => e.championship_id)));
+  if (extChampIds.length > 0) {
+    const { data: extChampsData } = await supabase
+      .from("championships")
+      .select("id, name, short_name")
+      .in("id", extChampIds);
+    for (const c of (extChampsData ?? []) as unknown as {
+      id: string;
+      name: string;
+      short_name: string | null;
+    }[]) {
+      champNames[c.id] = c.name;
+      extShortNames.set(c.id, c.short_name ?? c.id);
     }
   }
 
@@ -538,16 +566,52 @@ export default async function DriverPage({ params }: PageProps) {
     };
   });
 
+  // Standings-level rows: one per (championship, year) in external_standings.
+  // No seasons or races behind them: the final position plus the Super
+  // Licence award are the record. Team, points, wins and the FT/PT/R
+  // badges do not apply; the position feeds the champion badges and the
+  // titles stat exactly like a season-based championship.
+  const extSl = (cid: string, yr: number): number | null => {
+    const s = slRows.find((row) => row.year === yr && row.championship_id === cid);
+    return s ? Number(s.sl_points ?? 0) : null;
+  };
+  const extRows: CareerRow[] = extStandings.map((e) => ({
+    key: `${e.championship_id}:${e.year}`,
+    year: e.year,
+    age: null,
+    championshipId: e.championship_id,
+    shortName: extShortNames.get(e.championship_id) ?? e.championship_id,
+    rookie: false,
+    position: e.final_position,
+    races: null,
+    points: null,
+    wins: null,
+    podiums: null,
+    fastestLaps: null,
+    slPoints: extSl(e.championship_id, e.year),
+    teamName: "—",
+    ft: null,
+    multiTeams: null,
+  }));
+  const extKeys = new Set(extRows.map((r) => r.key));
+  // Season-based rows first within a year, then standings-level ones.
+  const allRows: CareerRow[] = [...rows, ...extRows].sort(
+    (a, b) =>
+      a.year - b.year ||
+      Number(extKeys.has(a.key)) - Number(extKeys.has(b.key)) ||
+      a.championshipId.localeCompare(b.championshipId)
+  );
+
   // Career totals across all championships
   const totals = {
-    yearsOnRoad: new Set(career.map((c) => c.year)).size,
+    yearsOnRoad: new Set(allRows.map((r) => r.year)).size,
     racesOnRecord: results.filter((r) => r.status !== "dns").length,
     wins: results.filter((r) => r.finish_position === 1).length,
     podiums: results.filter(
       (r) => r.finish_position !== null && r.finish_position >= 1 && r.finish_position <= 3
     ).length,
     fastestLaps: results.filter((r) => r.fastest_lap).length,
-    titles: rows.filter((r) => r.position === 1).length,
+    titles: allRows.filter((r) => r.position === 1).length,
   };
 
   // Super Licence: the rolling three-year FIA window (the two completed
@@ -590,13 +654,15 @@ export default async function DriverPage({ params }: PageProps) {
   const accent = primaryAcademy?.academy?.color ?? "#475569";
 
   // Title badges: one chip per championship won, most recent first.
-  const champBadges = rows
+  const champBadges = allRows
     .filter((r) => r.position === 1)
     .sort((a, b) => b.year - a.year)
     .map((r) => ({
       key: r.key,
       year: r.year,
-      label: (champNames[r.championshipId] ?? r.shortName).replace(/ Championship$/, "").toUpperCase(),
+      label: extShortNames.has(r.championshipId)
+        ? r.shortName.toUpperCase()
+        : (champNames[r.championshipId] ?? r.shortName).replace(/ Championship$/, "").toUpperCase(),
     }));
 
   // Initials for the avatar when there is no headshot.
@@ -749,7 +815,7 @@ export default async function DriverPage({ params }: PageProps) {
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 1rem 48px" }}>
         <ProfileTabs
           data={{
-            rows,
+            rows: allRows,
             champNames,
             totals: {
               years: totals.yearsOnRoad,
