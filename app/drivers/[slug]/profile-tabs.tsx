@@ -66,6 +66,9 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
   const { rows, champNames, totals, sl } = data;
 
   const num = (v: number | null): number => (v === null ? 0 : v);
+  /** Standings-level (external) season: final standings only, no races or points. */
+  const standingsLevel = (r: CareerRow): boolean =>
+    r.races === null && r.points === null && r.multiTeams === null && r.ft === null && !r.rookie;
   const titled = rows.filter((r) => r.position === 1);
 
   /* ---------- aggregates for the stats tab ---------- */
@@ -92,9 +95,11 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
         wins: 0,
         podiums: 0,
         points: 0,
+        standings: 0,
         best: r.position ?? 999,
       };
       cur.seasons += 1;
+      cur.standings += standingsLevel(r) ? 1 : 0;
       cur.races += num(r.races);
       cur.wins += num(r.wins);
       cur.podiums += num(r.podiums);
@@ -104,7 +109,7 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
       return map;
     }, new Map<
       string,
-      { shortName: string; color: string; seasons: number; races: number; wins: number; podiums: number; points: number; best: number }
+      { shortName: string; color: string; seasons: number; standings: number; races: number; wins: number; podiums: number; points: number; best: number }
     >()
     ).values()
   );
@@ -122,7 +127,10 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
     ]);
   }
   if (bestRow) {
-    records.push(["Best finish", `P1 — ${totals.wins} win${totals.wins === 1 ? "" : "s"} in total`]);
+    records.push([
+      "Best finish",
+      "P1" + (totals.wins > 0 ? " — " + totals.wins + " win" + (totals.wins === 1 ? "" : "s") + " in total" : ""),
+    ]);
   } else if (rows.some((r) => r.position !== null)) {
     const bestPos = Math.min(...rows.filter((r) => r.position !== null).map((r) => r.position as number));
     records.push(["Best finish", `P${bestPos}`]);
@@ -256,7 +264,11 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
                           {s.position !== null ? `P${s.position}` : "—"}
                         </span>
                         <span style={{ fontSize: 11, color: DIM }}>
-                          {s.points !== null ? `${s.points} pts` : "no results"}
+                          {s.points !== null
+                            ? s.points + " pts"
+                            : standingsLevel(s)
+                              ? "standings"
+                              : "no results"}
                         </span>
                       </div>
                     </div>
@@ -299,7 +311,8 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
                           {champNames[r.championshipId] ?? r.shortName} · {r.year}
                         </span>
                         <span style={{ display: "block", fontSize: 13, color: DIM, marginTop: 2 }}>
-                          {r.multiTeams ? `${r.multiTeams.length} teams` : r.teamName} · {r.points} points ·{" "}
+                          {r.multiTeams ? `${r.multiTeams.length} teams` : r.teamName}
+          {r.points !== null ? ` · ${r.points} points · ` : ` · `}
                           {r.rookie
                             ? "champion as a rookie"
                             : `his ${ordinal(seasonsBefore + 1)} season in the series`}
@@ -494,7 +507,10 @@ export default function ProfileTabs({ data }: { data: ProfileData }) {
                   <span>
                     <span style={{ display: "block", fontWeight: 700, fontSize: 13.5, color: c.color }}>{c.shortName}</span>
                     <span style={{ display: "block", fontSize: 11.5, color: DIM, marginTop: 2 }}>
-                      {c.seasons} season{c.seasons === 1 ? "" : "s"} · {c.races} races · {c.wins} wins · {c.podiums} podiums
+                      {c.seasons} season{c.seasons === 1 ? "" : "s"}
+                      {c.seasons === c.standings
+                        ? " · standings-level"
+                        : " · " + c.races + " races · " + c.wins + " wins · " + c.podiums + " podiums"}
                     </span>
                   </span>
                   <span style={{ fontWeight: 800, fontSize: 15, color: c.best === 1 ? ORANGE : TEXT }}>
